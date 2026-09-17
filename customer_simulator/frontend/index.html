@@ -807,6 +807,15 @@ async function analyzeConversation() {
             throw new Error(data.detail || "Analysis failed");
         }
 
+        function formatList(val, fallback) {
+            if (!val) return fallback;
+            if (Array.isArray(val)) {
+                if (val.length === 0) return fallback;
+                return val.map(item => `• ${escapeHtml(item)}`).join("<br>");
+            }
+            return escapeHtml(val);
+        }
+
         // Display results
         resultsDiv.innerHTML = `
             <div style="background:#f7f9fc; border:1px solid #e0e7f0; border-radius:12px; padding:20px;">
@@ -814,22 +823,22 @@ async function analyzeConversation() {
 
                 <div class="copilotBox">
                     <h4>❤️ Overall Customer Emotion</h4>
-                    <p><strong>${escapeHtml(data.emotion || "Unknown")}</strong> (Frustration: ${data.frustration_level || "N/A"}/10)</p>
+                    <p><strong>${escapeHtml(data.emotion || data.overall_emotion || "Unknown")}</strong> (Frustration: ${data.frustration_level || data.frustration_score || "N/A"}/10)</p>
                 </div>
 
                 <div class="copilotBox">
                     <h4>✅ What the Agent Did Well</h4>
-                    <p>${escapeHtml(data.strengths || "No specific strengths identified.")}</p>
+                    <p>${formatList(data.strengths || data.what_agent_did_well, "No specific strengths identified.")}</p>
                 </div>
 
                 <div class="copilotBox">
                     <h4>⚠️ Areas for Improvement</h4>
-                    <p>${escapeHtml(data.weaknesses || "No specific weaknesses identified.")}</p>
+                    <p>${formatList(data.weaknesses || data.areas_for_improvement, "No specific weaknesses identified.")}</p>
                 </div>
 
                 <div class="copilotBox">
                     <h4>💡 Coaching Suggestions</h4>
-                    <p>${escapeHtml(data.suggestions || "No suggestions available.")}</p>
+                    <p>${formatList(data.suggestions || data.coaching_suggestions, "No suggestions available.")}</p>
                 </div>
 
                 ${data.improved_response ? `
