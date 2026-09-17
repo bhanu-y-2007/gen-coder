@@ -20,6 +20,7 @@ Frustration level is the emotional control.
 
 import uuid
 import json
+import re
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -206,61 +207,27 @@ class CustomerSimulator:
                 }
             )
 
+        # Handle None or empty agent message safely
+        safe_message = str(agent_message) if agent_message is not None else ""
+
         # Record agent message
         self._record(
             "agent",
-            agent_message
+            safe_message
         )
 
-        text = agent_message.lower()
+        text = safe_message.lower()
 
         # ------------------------------------------------------
-        # FRUSTRATION CHANGES BASED ON AGENT RESPONSE
+        # DYNAMIC FRUSTRATION EVALUATION BASED ON AGENT REPLY
         # ------------------------------------------------------
+        delta = self._evaluate_agent_reply(safe_message)
 
-        helpful_words = [
-            "processed",
-            "confirmed",
-            "completed",
-            "resolved",
-            "refund",
-            "delivery date",
-            "tracking",
-            "check",
-            "checked",
-            "escalated",
-            "fixed",
-            "solution",
-            "timeline",
-            "next step",
-            "help"
-        ]
-
-        poor_words = [
-            "wait",
-            "soon",
-            "later",
-            "can't help",
-            "cannot help",
-            "nothing i can do",
-            "don't know",
-            "do not know",
-            "not my problem"
-        ]
-
-        if any(word in text for word in poor_words):
-
-            self.frustration_level = min(
-                10,
-                self.frustration_level + 1
-            )
-
-        elif any(word in text for word in helpful_words):
-
-            self.frustration_level = max(
-                1,
-                self.frustration_level - 1
-            )
+        # Apply dynamic delta (bounded between 1 and 10)
+        self.frustration_level = max(
+            1,
+            min(10, self.frustration_level + delta)
+        )
 
         # ------------------------------------------------------
         # RESOLUTION
@@ -301,6 +268,248 @@ class CustomerSimulator:
         )
 
         return self._build_response(message)
+
+
+    # ==========================================================
+    # EVALUATE AGENT REPLY & DYNAMIC FRUSTRATION CHANGE
+    # ==========================================================
+
+    def _evaluate_agent_reply(self, agent_message: Optional[str]) -> int:
+        """
+        Dynamically calculates the change in customer frustration level
+        based on the agent's message quality, tone, empathy, ownership,
+        actionability, and resolution.
+
+        Returns delta:
+          Negative value (e.g. -1, -2, -3, -4, -5) -> decreases frustration
+          Zero -> no change
+          Positive value (e.g. +1, +2, +3) -> increases frustration
+        """
+        if not agent_message or not agent_message.strip():
+            # Missing or empty response
+            return 1
+
+        text = agent_message.lower().strip()
+        words = text.split()
+        word_count = len(words)
+
+        # ------------------------------------------------------
+        # 1. EMPATHY & APOLOGY
+        # ------------------------------------------------------
+        empathy_score = 0
+
+        # Sincere / Deep apologies
+        deep_apologies = [
+            r"\b(sincere(ly)?\s+apolog(y|ize|ise|ies))\b",
+            r"\b(deeply\s+apolog(y|ize|ise|ies))\b",
+            r"\b(apolog(ize|ise|y)\s+for\s+the\s+(delay|inconvenience|trouble|confusion|wait|frustration))\b",
+            r"\b(sorry\s+for\s+the\s+(delay|inconvenience|trouble|confusion|wait|frustration))\b",
+            r"\b(my\s+(sincerest\s+)?apologies)\b",
+            r"\b(truly\s+sorry)\b",
+        ]
+        if any(re.search(pat, text, re.I) for pat in deep_apologies):
+            empathy_score += 2
+        elif re.search(r"\b(apolog(y|ize|ise|ies)|sorry)\b", text, re.I):
+            empathy_score += 1
+
+        # Validation of customer's feelings & situation
+        deep_validations = [
+            r"\b(completely\s+understand(\s+your)?\s+(concern|frustration|situation|disappointment)?)\b",
+            r"\b(understand\s+your\s+(concern|frustration|situation|disappointment|annoyance))\b",
+            r"\b(understand\s+(that\s+)?you\s+have\s+been\s+waiting)\b",
+            r"\b(appreciate\s+your\s+(patience|understanding))\b",
+            r"\b(thank\s+you\s+for\s+your\s+(patience|understanding|cooperation))\b",
+            r"\b(can\s+understand\s+how\s+(frustrating|upsetting|annoying))\b",
+            r"\b(that\s+must\s+be\s+(very\s+)?(frustrating|upsetting|concerning))\b",
+            r"\b(valid\s+concern)\b",
+        ]
+        if any(re.search(pat, text, re.I) for pat in deep_validations):
+            empathy_score += 2
+        elif re.search(r"\b(understand|patience|empathize|hear\s+you)\b", text, re.I):
+            empathy_score += 1
+
+        empathy_score = min(empathy_score, 4)
+
+        # ------------------------------------------------------
+        # 2. OWNERSHIP & ACTIVE INVESTIGATION
+        # ------------------------------------------------------
+        ownership_score = 0
+
+        strong_ownership = [
+            r"\b(carefully\s+check(ed)?(\s+the\s+details)?)\b",
+            r"\b(review(ing)?\s+(the\s+)?(status|details|account|request))\b",
+            r"\b(investigat(e|ing|ed)\s+(this|the\s+issue|the\s+request))\b",
+            r"\b(looking\s+into\s+this\s+(right\s+now|immediately|for\s+you|now))\b",
+            r"\b(personally\s+(ensure|handle|make\s+sure|verify))\b",
+            r"\b(escalat(ed|ing|e)\s+(this|to\s+a\s+manager|to\s+our\s+senior|to\s+supervisor))\b",
+            r"\b(priorit(y|ize|ized))\b",
+            r"\b(working\s+to\s+ensure)\b",
+            r"\b(take\s+full\s+responsibility)\b",
+        ]
+        if any(re.search(pat, text, re.I) for pat in strong_ownership):
+            ownership_score += 2
+        elif re.search(r"\b(check(ed)?|review(ing)?|investigat(e|ing)?|look(ing)?\s+into|verify(ing)?|assist|help)\b", text, re.I):
+            ownership_score += 1
+
+        ownership_score = min(ownership_score, 3)
+
+        # ------------------------------------------------------
+        # 3. CONCRETE RESOLUTION, ACTIONS & TIMELINES
+        # ------------------------------------------------------
+        resolution_score = 0
+
+        # Full direct resolution phrases
+        full_resolutions = [
+            r"\b(refund\s+(has\s+been|is|will\s+be)\s+(processed|issued|completed|approved|credited))\b",
+            r"\b(processed\s+(your|the)\s+refund)\b",
+            r"\b(full\s+refund\s+(has\s+been\s+)?(issued|credited|processed|approved))\b",
+            r"\b(amount\s+(will\s+be|has\s+been)\s+credited\s+back)\b",
+            r"\b(credited\s+back\s+to\s+(your|the\s+original)\s+(payment|card|account))\b",
+            r"\b(access\s+(has\s+been|is)\s+restored)\b",
+            r"\b(unlocked\s+(your|the)\s+account)\b",
+            r"\b(subscription\s+(has\s+been|is)\s+cancelled)\b",
+            r"\b(cancellation\s+confirmed)\b",
+            r"\b(replacement\s+(has\s+been|is)\s+(sent|shipped|dispatched))\b",
+            r"\b(order\s+(has\s+been\s+)?(delivered|shipped|dispatched))\b",
+            r"\b(tracking\s+(number|link|details))\b",
+            r"\b(delivery\s+date\s+is)\b",
+        ]
+        if any(re.search(pat, text, re.I) for pat in full_resolutions):
+            resolution_score += 3
+        elif re.search(r"\b(refund|credited|resolve(d)?|fixed|complete(d)?|process(ed)?|restored|cancelled)\b", text, re.I):
+            resolution_score += 1
+
+        # Concrete timelines and clear next steps
+        clear_timelines = [
+            r"\b(within\s+\d+\s+(hours?|days?|business\s+days?|minutes?))\b",
+            r"\b(by\s+(tomorrow|today|end\s+of\s+day|the\s+end\s+of\s+the\s+week))\b",
+            r"\b(provide\s+you\s+with\s+a\s+clear\s+update)\b",
+            r"\b(next\s+steps?\s+(are|will\s+be)\s+explained)\b",
+            r"\b(definite\s+(timeline|answer|update))\b",
+            r"\b(as\s+soon\s+as\s+possible)\b",
+            r"\b(immediately|right\s+away)\b",
+            r"\b(step[- ]by[- ]step)\b",
+        ]
+        if any(re.search(pat, text, re.I) for pat in clear_timelines):
+            resolution_score += 2
+        elif re.search(r"\b(timeline|next\s+step(s)?|update|explained|status)\b", text, re.I):
+            resolution_score += 1
+
+        resolution_score = min(resolution_score, 4)
+
+        # ------------------------------------------------------
+        # 4. REASSURANCE & PROFESSIONAL COURTESY
+        # ------------------------------------------------------
+        tone_score = 0
+        reassurance = [
+            r"\b(rest\s+assured)\b",
+            r"\b(make\s+sure\s+that)\b",
+            r"\b(ensure\s+that)\b",
+            r"\b(committed\s+to\s+(resolving|helping))\b",
+            r"\b(happy\s+to\s+help|glad\s+to\s+assist|here\s+to\s+help)\b",
+            r"\b(thank\s+you\s+for\s+giving\s+us\s+the\s+opportunity)\b",
+        ]
+        if any(re.search(pat, text, re.I) for pat in reassurance):
+            tone_score += 1
+
+        if re.search(r"\b(thank\s+you|thanks|appreciate)\b", text, re.I):
+            tone_score += 1
+
+        tone_score = min(tone_score, 2)
+
+        # ------------------------------------------------------
+        # 5. LENGTH & THOUGHTFULNESS BONUS
+        # ------------------------------------------------------
+        length_bonus = 0
+        if word_count >= 35 and (empathy_score + ownership_score + resolution_score >= 3):
+            length_bonus = 1
+
+        # ------------------------------------------------------
+        # 6. NEGATIVE SIGNALS & PENALTIES
+        # ------------------------------------------------------
+        penalty = 0
+
+        # Explicitly dismissive / rejecting accountability
+        blatant_dismissive = [
+            r"\b(not\s+my\s+(problem|job|fault|responsibility))\b",
+            r"\b(outside\s+our\s+control)\b",
+            r"\b(nothing\s+(i|we)\s+can\s+do)\b",
+            r"\b(can'?t\s+help(\s+you)?|cannot\s+help(\s+you)?)\b",
+            r"\b(don'?t\s+know|do\s+not\s+know)\b",
+            r"\b(refuse\s+to|not\s+going\s+to\s+help)\b",
+            r"\b(deal\s+with\s+it)\b",
+            r"\b(stop\s+complaining|stop\s+asking)\b",
+        ]
+        if any(re.search(pat, text, re.I) for pat in blatant_dismissive):
+            penalty += 3
+
+        # Inflexible refusal or hostile policy shields
+        policy_blocks = [
+            r"\b(company\s+policy\s+(states|says|dictates|forbids)\s+(we\s+can'?t|no))\b",
+            r"\b(no\s+refunds?(\s+allowed|\s+ever)?)\b",
+            r"\b(final\s+sale|store\s+credit\s+only)\b",
+        ]
+        if any(re.search(pat, text, re.I) for pat in policy_blocks):
+            penalty += 2
+
+        # Blaming the customer
+        customer_blame = [
+            r"\b(you\s+(should|must|need\s+to)\s+have\s+(known|read|checked))\b",
+            r"\b(your\s+(fault|mistake|error))\b",
+            r"\b(why\s+didn'?t\s+you)\b",
+        ]
+        if any(re.search(pat, text, re.I) for pat in customer_blame):
+            penalty += 2
+
+        # Brushoff without any empathy or action
+        if re.search(r"\b(just\s+wait|call\s+back\s+later|try\s+again\s+later|check\s+back\s+next\s+week)\b", text, re.I):
+            if empathy_score == 0 and ownership_score == 0:
+                penalty += 2
+
+        # Extreme curtness / empty replies
+        if word_count <= 4 and (empathy_score + ownership_score + resolution_score == 0):
+            penalty += 2
+
+        # ------------------------------------------------------
+        # COMPUTE TOTAL QUALITY SCORE
+        # ------------------------------------------------------
+        total_positive = empathy_score + ownership_score + resolution_score + tone_score + length_bonus
+        net_score = total_positive - penalty
+
+        current_level = self.frustration_level
+
+        # ------------------------------------------------------
+        # DYNAMIC DELTA MAPPING
+        # Frustration decreases significantly on high-quality responses!
+        # Not restricted to -1 or -2.
+        # ------------------------------------------------------
+        if net_score >= 8:
+            # Exceptional, complete, empathetic response
+            return -5 if current_level >= 8 else -4
+        elif net_score >= 6:
+            # Strong response with clear ownership and timeline
+            return -3
+        elif net_score >= 4:
+            # Good response (apology + investigation or partial resolution)
+            return -2
+        elif net_score >= 2:
+            # Moderately helpful response
+            return -1
+        elif net_score == 1:
+            # Mild response
+            return -1 if current_level >= 7 else 0
+        elif net_score == 0:
+            # Neutral / no impact
+            return 0
+        elif net_score in (-1, -2):
+            # Vague / curt / slightly unhelpful
+            return 1
+        elif net_score in (-3, -4):
+            # Dismissive or poor response
+            return 2
+        else:
+            # Very rude / hostile / completely unhelpful
+            return 3
 
 
     # ==========================================================

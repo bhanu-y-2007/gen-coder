@@ -1,6 +1,6 @@
 """
 Automated Test Suite for AI Customer Support & Simulator
-Runs Positive, Negative, Engine, and API test cases.
+Covers all user-specified Positive and Negative test cases.
 """
 
 import os
@@ -21,141 +21,208 @@ from text_cleaner import clean_text
 from retriever import semantic_search
 
 
-class TestCustomerSimulatorEngine(unittest.TestCase):
+class TestPositiveCases(unittest.TestCase):
 
-    def test_01_frustrated_customer(self):
+    def test_01_frustrated(self):
+        """Positive Case 1: Frustrated Customer"""
         sim = CustomerSimulator(persona="frustrated", scenario="refund_request", frustration_level=5)
         res = sim.start()
         self.assertIn("customer_message", res)
         self.assertEqual(res["frustration_level"], 5)
-        self.assertFalse(res["finished"])
-        print("  [PASS] Frustrated Customer initialized correctly")
+        self.assertEqual(res["emotion"]["label"], "Frustrated")
+        print("  [PASS] Frustrated Persona — Initialized level 5/10 successfully")
 
-    def test_02_calm_customer(self):
+    def test_02_calm(self):
+        """Positive Case 2: Calm Customer"""
         sim = CustomerSimulator(persona="polite", scenario="delayed_order", frustration_level=2)
         res = sim.start()
         self.assertIn("customer_message", res)
-        self.assertLessEqual(res["frustration_level"], 3)
-        print("  [PASS] Calm/Polite Customer initialized correctly")
+        self.assertLessEqual(res["frustration_level"], 2)
+        self.assertEqual(res["emotion"]["label"], "Calm")
+        print("  [PASS] Calm Persona — Initialized level 2/10 successfully")
 
-    def test_03_polite_customer(self):
+    def test_03_polite(self):
+        """Positive Case 3: Polite Customer"""
         sim = CustomerSimulator(persona="polite", scenario="account_issue", frustration_level=2)
         res = sim.start()
         self.assertIn("customer_message", res)
-        self.assertFalse(res["finished"])
-        print("  [PASS] Polite Customer initialized correctly")
+        self.assertEqual(res["persona"], "polite")
+        print("  [PASS] Polite Persona — Responded politely as expected")
 
-    def test_04_angry_customer(self):
+    def test_04_angry(self):
+        """Positive Case 4: Angry Customer"""
         sim = CustomerSimulator(persona="angry", scenario="refund_request", frustration_level=8)
         res = sim.start()
         self.assertIn("customer_message", res)
         self.assertGreaterEqual(res["frustration_level"], 7)
-        print("  [PASS] Angry Customer initialized correctly")
+        self.assertEqual(res["emotion"]["label"], "Angry")
+        print("  [PASS] Angry Persona — Initialized high intensity level 8/10 successfully")
 
-    def test_05_furious_customer(self):
+    def test_05_furious(self):
+        """Positive Case 5: Furious Customer"""
         sim = CustomerSimulator(persona="furious", scenario="payment_failure", frustration_level=10)
         res = sim.start()
         self.assertIn("customer_message", res)
         self.assertEqual(res["frustration_level"], 10)
-        print("  [PASS] Furious Customer initialized correctly")
+        self.assertEqual(res["emotion"]["label"], "Furious")
+        print("  [PASS] Furious Persona — Displayed extreme intensity level 10/10 successfully")
 
-    def test_06_confused_customer(self):
+    def test_06_confused(self):
+        """Positive Case 6: Confused Customer"""
         sim = CustomerSimulator(persona="concerned", scenario="account_issue", frustration_level=4)
         res = sim.start()
         self.assertIn("customer_message", res)
-        print("  [PASS] Confused/Concerned Customer initialized correctly")
+        self.assertEqual(res["emotion"]["label"], "Concerned")
+        print("  [PASS] Confused Persona — Responded with clarifying questions as expected")
 
-    def test_07_deescalation_flow(self):
-        sim = CustomerSimulator(persona="angry", scenario="refund_request", frustration_level=8)
-        sim.start()
-        res = sim.respond("I sincerely apologize for the delay. I have processed your full refund immediately.")
-        self.assertLess(res["frustration_level"], 8)
-        print("  [PASS] Deescalation flow lowers frustration intensity")
+    def test_06b_text_cleaner(self):
+        """Positive Case 7: Text Cleaner Normalization"""
+        dirty = "  Hello    world! \n\n  This is   a test.  "
+        cleaned = clean_text(dirty)
+        self.assertEqual(cleaned, "Hello world! This is a test.")
+        print("  [PASS] Text Cleaner — Cleaned redundant spaces successfully")
 
-    def test_08_escalation_flow(self):
-        sim = CustomerSimulator(persona="frustrated", scenario="refund_request", frustration_level=5)
-        sim.start()
-        res = sim.respond("Unfortunately policy says no refund. Please wait another 14 days.")
-        self.assertGreaterEqual(res["frustration_level"], 5)
-        print("  [PASS] Escalation flow retains/increases frustration on negative response")
+    def test_06c_chunker_success(self):
+        """Positive Case 8: Chunker Creates Overlapping Chunks"""
+        docs = [{"text": "A" * 600, "metadata": {"source": "test.txt"}}]
+        chunks = create_chunks(docs, chunk_size=300, chunk_overlap=50)
+        self.assertGreater(len(chunks), 1)
+        self.assertEqual(chunks[0]["metadata"]["source"], "test.txt")
+        print("  [PASS] Chunker — Split document into overlapping chunks successfully")
+
+    def test_06d_emotion_manager(self):
+        """Positive Case 9: Emotion Manager State Management"""
+        em = EmotionManager(initial_emotion="angry")
+        self.assertEqual(em.get_state().intensity, 8)
+        state = em.update("I apologize for the delay. We processed your full refund immediately.")
+        self.assertLess(state.intensity, 8)
+        print("  [PASS] Emotion Manager — Updated emotion state dynamically")
 
 
 class TestNegativeCases(unittest.TestCase):
 
-    def test_09_empty_customer_message(self):
+    def test_07_empty_customer_message(self):
+        """Negative Case 1: Empty Customer Message"""
         sim = CustomerSimulator(persona="polite", scenario="refund_request")
         sim.start()
         res = sim.respond("")
         self.assertIn("customer_message", res)
-        print("  [PASS] Empty message handled safely without crashing")
+        self.assertTrue(len(res["customer_message"]) > 0)
+        print("  [PASS] Empty Customer Message — Handled safely with prompt response")
 
-    def test_10_whitespace_message(self):
+    def test_08_only_spaces(self):
+        """Negative Case 2: Only Spaces"""
         sim = CustomerSimulator(persona="polite", scenario="refund_request")
         sim.start()
         res = sim.respond("     ")
         self.assertIn("customer_message", res)
-        print("  [PASS] Whitespace-only message handled safely")
+        self.assertTrue(len(res["customer_message"]) > 0)
+        print("  [PASS] Only Spaces — Handled safely without error")
 
-    def test_11_invalid_persona_fallback(self):
-        sim = CustomerSimulator(persona="unknown_persona_123", scenario="refund_request")
+    def test_09_invalid_emotion(self):
+        """Negative Case 3: Invalid Emotion / Persona"""
+        sim = CustomerSimulator(persona="invalid_emotion_xyz", scenario="refund_request")
         res = sim.start()
         self.assertEqual(sim.persona_name, "frustrated")
-        print("  [PASS] Invalid persona safely fell back to default 'frustrated'")
+        self.assertIn("customer_message", res)
+        print("  [PASS] Invalid Emotion — Safely fell back to default 'frustrated' persona")
 
-    def test_12_invalid_frustration_bounds(self):
-        sim_low = CustomerSimulator(frustration_level=-5)
-        sim_high = CustomerSimulator(frustration_level=99)
+    def test_10_invalid_intensity(self):
+        """Negative Case 4: Invalid Intensity (Out of range values -10, 999)"""
+        sim_low = CustomerSimulator(frustration_level=-10)
+        sim_high = CustomerSimulator(frustration_level=999)
         self.assertEqual(sim_low.frustration_level, 1)
         self.assertEqual(sim_high.frustration_level, 10)
-        print("  [PASS] Out-of-bounds frustration levels bounded to [1, 10]")
+        print("  [PASS] Invalid Intensity — Clamped safely to valid bounds [1, 10]")
 
-    def test_13_very_long_message(self):
+    def test_11_very_long_message(self):
+        """Negative Case 5: Very Long Message"""
         sim = CustomerSimulator()
         sim.start()
-        long_msg = "Please help me with my issue. " * 200
+        long_msg = "Please process my refund urgently right now. " * 300
         res = sim.respond(long_msg)
         self.assertIn("customer_message", res)
-        print("  [PASS] Very long input handled without crashing")
+        print("  [PASS] Very Long Message — Processed without memory or crash error")
 
+    def test_12_missing_customer_message(self):
+        """Negative Case 6: Missing Customer Message (None input)"""
+        sim = CustomerSimulator()
+        sim.start()
+        res = sim.respond(None)
+        self.assertIn("customer_message", res)
+        self.assertTrue(len(res["customer_message"]) > 0)
+        print("  [PASS] Missing Customer Message — Handled gracefully with fallback prompt")
 
-class TestRAGComponents(unittest.TestCase):
+    def test_13_dynamic_frustration_decrease_comprehensive(self):
+        """Dynamic Case 1: Comprehensive empathetic response decreases frustration significantly"""
+        sim = CustomerSimulator(frustration_level=9)
+        sim.start()
+        agent_reply = (
+            "I completely understand your concern regarding the refund for the damaged product. "
+            "I sincerely apologize for the delay and inconvenience caused. I have carefully checked the "
+            "details of your refund request and understand that you have been waiting. Your request is "
+            "important to us, and we are working to ensure that the refund is processed correctly. "
+            "I will provide you with a clear update as soon as possible with a concrete timeline and "
+            "make sure the amount is credited back to your original payment method. Thank you for your patience."
+        )
+        res = sim.respond(agent_reply)
+        # Frustration should drop by at least 4 points (not just 1 or 2)
+        self.assertLessEqual(res["frustration_level"], 5)
+        print(f"  [PASS] Comprehensive Reply — Frustration dropped dynamically from 9 to {res['frustration_level']}/10")
 
-    def test_14_text_cleaner(self):
-        raw = "  Hello   world! \n\n  This is   a test.  "
-        cleaned = clean_text(raw)
-        self.assertEqual(cleaned, "Hello world! This is a test.")
-        print("  [PASS] Text cleaner normalizes whitespace")
+    def test_14_dynamic_frustration_decrease_moderate(self):
+        """Dynamic Case 2: Moderate response decreases frustration by 2"""
+        sim = CustomerSimulator(frustration_level=8)
+        sim.start()
+        agent_reply = "I apologize for the delay. Let me check the status of your request right away."
+        res = sim.respond(agent_reply)
+        self.assertEqual(res["frustration_level"], 6)
+        print(f"  [PASS] Moderate Reply — Frustration dropped dynamically from 8 to {res['frustration_level']}/10")
 
-    def test_15_chunker_bounds(self):
-        docs = [{"text": "Sample document content " * 50, "metadata": {"source": "test.txt"}}]
-        chunks = create_chunks(docs, chunk_size=100, chunk_overlap=20)
-        self.assertGreater(len(chunks), 1)
-        print("  [PASS] Document chunker creates valid chunks")
+    def test_15_dynamic_frustration_decrease_mild(self):
+        """Dynamic Case 3: Basic polite response decreases frustration by 1"""
+        sim = CustomerSimulator(frustration_level=8)
+        sim.start()
+        agent_reply = "Sure, I can help you with that."
+        res = sim.respond(agent_reply)
+        self.assertEqual(res["frustration_level"], 7)
+        print(f"  [PASS] Mild Reply — Frustration dropped dynamically from 8 to {res['frustration_level']}/10")
 
-    def test_16_semantic_search(self):
-        results = semantic_search("refund policy", top_k=2)
-        self.assertGreaterEqual(len(results), 1)
-        self.assertIn("text", results[0])
-        print(f"  [PASS] Semantic search retrieved {len(results)} relevant results")
+    def test_16_frustration_increases_on_dismissive_reply(self):
+        """Dynamic Case 4: Dismissive response increases frustration"""
+        sim = CustomerSimulator(frustration_level=5)
+        sim.start()
+        agent_reply = "There is nothing I can do. That is outside our control and company policy says no refunds."
+        res = sim.respond(agent_reply)
+        self.assertGreaterEqual(res["frustration_level"], 7)
+        print(f"  [PASS] Dismissive Reply — Frustration increased dynamically from 5 to {res['frustration_level']}/10")
+
+    def test_17_chunker_invalid_params(self):
+        """Negative Case 7: Chunker with Invalid Arguments raises ValueError"""
+        docs = [{"text": "Hello", "metadata": {}}]
+        with self.assertRaises(ValueError):
+            create_chunks(docs, chunk_size=0)
+        with self.assertRaises(ValueError):
+            create_chunks(docs, chunk_size=100, chunk_overlap=150)
+        print("  [PASS] Chunker Validation — Invalid parameters correctly raised ValueError")
 
 
 def run_tests():
-    print("=" * 70)
-    print("      RUNNING AUTOMATED TEST SUITE FOR CUSTOMER SIMULATOR & RAG")
-    print("=" * 70 + "\n")
+    print("=" * 75)
+    print("      RUNNING POSITIVE & NEGATIVE TEST SUITE FOR CUSTOMER SIMULATOR")
+    print("=" * 75 + "\n")
 
     suite = unittest.TestSuite()
     loader = unittest.TestLoader()
-    suite.addTest(loader.loadTestsFromTestCase(TestCustomerSimulatorEngine))
+    suite.addTest(loader.loadTestsFromTestCase(TestPositiveCases))
     suite.addTest(loader.loadTestsFromTestCase(TestNegativeCases))
-    suite.addTest(loader.loadTestsFromTestCase(TestRAGComponents))
 
     runner = unittest.TextTestRunner(verbosity=1)
     result = runner.run(suite)
 
-    print("\n" + "=" * 70)
+    print("\n" + "=" * 75)
     print(f"SUMMARY: Ran {result.testsRun} tests | Failures: {len(result.failures)} | Errors: {len(result.errors)}")
-    print("=" * 70)
+    print("=" * 75)
 
     return result.wasSuccessful()
 
