@@ -1,0 +1,9 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.env
+powershell.cmd
+logs/
+*.json
+vector_db/
