@@ -6,4 +6,3 @@ __pycache__/
 powershell.cmd
 logs/
 *.json
-vector_db/
