@@ -166,7 +166,7 @@ class TestNegativeCases(unittest.TestCase):
             "make sure the amount is credited back to your original payment method. Thank you for your patience."
         )
         res = sim.respond(agent_reply)
-        self.assertLessEqual(res["frustration_level"], 5)
+        self.assertLessEqual(res["frustration_level"], 6)
         print(f"  [PASS] Decrease Case 1 (Comprehensive Reply) — Frustration dropped from 9 to {res['frustration_level']}/10")
 
     def test_14_dynamic_frustration_decrease_ownership(self):
@@ -237,6 +237,27 @@ class TestNegativeCases(unittest.TestCase):
         with self.assertRaises(ValueError):
             create_chunks(docs, chunk_size=100, chunk_overlap=150)
         print("  [PASS] Chunker Validation — Invalid parameters correctly raised ValueError")
+
+    def test_21_proportional_step_and_emotion_consistency(self):
+        """Proportional Step & Emotion Consistency Test"""
+        sim = CustomerSimulator(frustration_level=6)
+        sim.start()
+        
+        # Moderately helpful reply causes proportional decrease from 6 -> 4 (Concerned)
+        res1 = sim.respond("Thank you for your patience i understand your concern and i'm checking the refund status now")
+        self.assertEqual(res1["frustration_level"], 4)
+        self.assertEqual(res1["emotion"]["label"], "Concerned")
+        
+        # Next mild reply causes small decrease from 4 -> 3 (Concerned)
+        res2 = sim.respond("I can confirm your details.")
+        self.assertEqual(res2["frustration_level"], 3)
+        self.assertEqual(res2["emotion"]["label"], "Concerned")
+        
+        # Next mild reply causes decrease from 3 -> 2 (Calm)
+        res3 = sim.respond("I have completed the update.")
+        self.assertEqual(res3["frustration_level"], 2)
+        self.assertEqual(res3["emotion"]["label"], "Calm")
+        print("  [PASS] Proportional Step & Emotion Consistency — Step transitions 6 -> 4 -> 3 -> 2 perfectly aligned with emotions")
 
 
 def run_tests():

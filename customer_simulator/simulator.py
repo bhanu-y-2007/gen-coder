@@ -370,7 +370,7 @@ class CustomerSimulator:
         ]
         if any(re.search(pat, text, re.I) for pat in strong_ownership_pats):
             ownership_score += 2
-        elif re.search(r"\b(check(ed)?|review(ing)?|investigat(e|ing)?|look(ing)?\s+into|verify(ing)?|assist|help|handle|ownership)\b", text, re.I):
+        elif re.search(r"\b(check(ed)?|review(ing)?|investigat(e|ing)?|look(ing)?\s+into|verify(ing)?|confirm(ed|ing)?|assist|help|handle|ownership)\b", text, re.I):
             ownership_score += 1
 
         ownership_score = min(ownership_score, 3)
@@ -500,22 +500,22 @@ class CustomerSimulator:
         current_level = self.frustration_level
 
         # ------------------------------------------------------
-        # DYNAMIC DELTA MAPPING
-        # Positive replies DECREASE frustration (delta < 0)
-        # Neutral / repetitive replies KEEP frustration unchanged (delta = 0)
-        # Negative / dismissive replies INCREASE frustration (delta > 0)
+        # PROPORTIONAL DYNAMIC DELTA MAPPING
+        # - Highly effective reply: larger decrease (-2 to -3)
+        # - Moderately helpful reply: small decrease (-1 to -2)
+        # - Mild helpful reply: small decrease (-1)
+        # - Neutral / repetitive reply: NO CHANGE (0)
+        # - Vague / unhelpful reply: small increase (+1)
+        # - Blatantly dismissive / blaming reply: moderate increase (+2)
         # ------------------------------------------------------
-        if net_score >= 7:
-            # Comprehensive resolution + empathy + ownership
-            return -4 if current_level >= 7 else -3
-        elif net_score >= 5:
-            # Strong supportive response (ownership + empathy + resolution)
-            return -3 if current_level >= 6 else -2
+        if net_score >= 6:
+            # Highly effective, comprehensive resolution + empathy + timeline
+            return -3 if current_level >= 8 else -2
         elif net_score >= 3:
-            # Good response (apology + investigation or action)
-            return -2
+            # Moderately helpful supportive reply (empathy + checking status)
+            return -2 if current_level >= 7 else -1
         elif net_score >= 1:
-            # Moderately helpful or polite response
+            # Mild / standard helpful reply
             return -1
         elif net_score == 0:
             # Neutral response (no clear help, no rudeness) -> NO CHANGE
@@ -523,12 +523,9 @@ class CustomerSimulator:
         elif net_score in (-1, -2):
             # Vague / unhelpful
             return 1
-        elif net_score in (-3, -4):
+        else:
             # Dismissive / blaming customer / policy refusal
             return 2
-        else:
-            # Hostile / highly rude / completely dismissive
-            return 3
 
 
     # ==========================================================
@@ -844,47 +841,12 @@ class CustomerSimulator:
 
         # ------------------------------------------------------
         # PERSONA MODIFICATION
+        # Subtle tone adaptation matching persona communication style
         # ------------------------------------------------------
-
-        if self.persona_name == "polite":
-
-            if band in ["angry", "furious"]:
-                message = (
-                    "I am very disappointed with this situation. "
-                    + message
-                )
-
-        elif self.persona_name == "concerned":
-
-            if band in ["angry", "furious"]:
-                message = (
-                    "I'm quite worried about this. "
-                    + message
-                )
-
-        elif self.persona_name == "frustrated":
-
-            if band == "calm":
-                message = (
-                    "I'm starting to get concerned. "
-                    + message
-                )
-
-        elif self.persona_name == "angry":
-
-            if band in ["calm", "concerned"]:
-                message = (
-                    "I'm not happy about this. "
-                    + message
-                )
-
-        elif self.persona_name == "furious":
-
-            if band in ["calm", "concerned", "frustrated"]:
-                message = (
-                    "I'm extremely unhappy with this situation. "
-                    + message
-                )
+        if self.persona_name == "polite" and band in ["angry", "furious"]:
+            message = "I am very disappointed with this situation. " + message
+        elif self.persona_name == "concerned" and band in ["angry", "furious"]:
+            message = "I'm quite worried about this situation. " + message
 
         # ------------------------------------------------------
         # ABSOLUTE NO-REPEAT PROTECTION
