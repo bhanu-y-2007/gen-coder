@@ -200,9 +200,6 @@ def respond_to_customer(req: AgentMessageRequest):
         raise HTTPException(status_code=404, detail="Session not found")
 
     try:
-        if req.frustration_level is not None:
-            sim.set_frustration_level(req.frustration_level)
-
         result = sim.respond(req.message)
         return result
     except Exception as e:

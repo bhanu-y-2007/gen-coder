@@ -166,18 +166,22 @@ class TestNegativeCases(unittest.TestCase):
             "make sure the amount is credited back to your original payment method. Thank you for your patience."
         )
         res = sim.respond(agent_reply)
-        # Frustration should drop by at least 4 points (not just 1 or 2)
         self.assertLessEqual(res["frustration_level"], 5)
-        print(f"  [PASS] Comprehensive Reply — Frustration dropped dynamically from 9 to {res['frustration_level']}/10")
+        print(f"  [PASS] Decrease Case 1 (Comprehensive Reply) — Frustration dropped from 9 to {res['frustration_level']}/10")
 
-    def test_14_dynamic_frustration_decrease_moderate(self):
-        """Dynamic Case 2: Moderate response decreases frustration by 2"""
-        sim = CustomerSimulator(frustration_level=8)
+    def test_14_dynamic_frustration_decrease_ownership(self):
+        """Dynamic Case 2: Supportive response taking ownership decreases frustration across multiple turns"""
+        sim = CustomerSimulator(frustration_level=9)
         sim.start()
-        agent_reply = "I apologize for the delay. Let me check the status of your request right away."
-        res = sim.respond(agent_reply)
-        self.assertEqual(res["frustration_level"], 6)
-        print(f"  [PASS] Moderate Reply — Frustration dropped dynamically from 8 to {res['frustration_level']}/10")
+        
+        # Turn 1: Empathetic response
+        r1 = sim.respond("I'm sorry for the inconvenience. I understand your frustration and I'll help resolve your refund request right away.")
+        self.assertLess(r1["frustration_level"], 9)
+        
+        # Turn 2: Ownership response (the exact case from screenshot)
+        r2 = sim.respond("I understand You have waited long enough.I'll take ownership of this and get your refund resolved now.")
+        self.assertLess(r2["frustration_level"], r1["frustration_level"])
+        print(f"  [PASS] Decrease Case 2 (Multi-turn Supportive Ownership) — Progressively decreased 9 -> {r1['frustration_level']} -> {r2['frustration_level']}/10")
 
     def test_15_dynamic_frustration_decrease_mild(self):
         """Dynamic Case 3: Basic polite response decreases frustration by 1"""
@@ -186,18 +190,46 @@ class TestNegativeCases(unittest.TestCase):
         agent_reply = "Sure, I can help you with that."
         res = sim.respond(agent_reply)
         self.assertEqual(res["frustration_level"], 7)
-        print(f"  [PASS] Mild Reply — Frustration dropped dynamically from 8 to {res['frustration_level']}/10")
+        print(f"  [PASS] Decrease Case 3 (Mild Polite Reply) — Frustration dropped from 8 to {res['frustration_level']}/10")
 
-    def test_16_frustration_increases_on_dismissive_reply(self):
-        """Dynamic Case 4: Dismissive response increases frustration"""
+    def test_16_frustration_no_change_neutral(self):
+        """Dynamic Case 4: Neutral acknowledgement results in NO CHANGE (Delta = 0)"""
+        sim = CustomerSimulator(frustration_level=6)
+        sim.start()
+        res = sim.respond("Let me see.")
+        self.assertEqual(res["frustration_level"], 6)
+        print(f"  [PASS] No Change Case 1 (Neutral Reply) — Frustration remained unchanged at {res['frustration_level']}/10")
+
+    def test_17_frustration_no_change_repetitive(self):
+        """Dynamic Case 5: Duplicate / repetitive response produces NO DECREASE (Delta = 0)"""
+        sim = CustomerSimulator(frustration_level=7)
+        sim.start()
+        sim.respond("I will look into this for you.")
+        level_after_t1 = sim.frustration_level
+        # Repeat the exact same message on next turn
+        res = sim.respond("I will look into this for you.")
+        self.assertEqual(res["frustration_level"], level_after_t1)
+        print(f"  [PASS] No Change Case 2 (Repetitive Reply) — Frustration stayed unchanged at {res['frustration_level']}/10")
+
+    def test_18_frustration_increases_on_dismissive_reply(self):
+        """Dynamic Case 6: Dismissive response increases frustration"""
         sim = CustomerSimulator(frustration_level=5)
         sim.start()
         agent_reply = "There is nothing I can do. That is outside our control and company policy says no refunds."
         res = sim.respond(agent_reply)
         self.assertGreaterEqual(res["frustration_level"], 7)
-        print(f"  [PASS] Dismissive Reply — Frustration increased dynamically from 5 to {res['frustration_level']}/10")
+        print(f"  [PASS] Increase Case 1 (Dismissive Reply) — Frustration increased from 5 to {res['frustration_level']}/10")
 
-    def test_17_chunker_invalid_params(self):
+    def test_19_frustration_increases_on_blaming_customer(self):
+        """Dynamic Case 7: Blaming customer increases frustration"""
+        sim = CustomerSimulator(frustration_level=5)
+        sim.start()
+        agent_reply = "You should have read our terms before ordering. This is your fault."
+        res = sim.respond(agent_reply)
+        self.assertGreaterEqual(res["frustration_level"], 7)
+        print(f"  [PASS] Increase Case 2 (Customer Blame) — Frustration increased from 5 to {res['frustration_level']}/10")
+
+    def test_20_chunker_invalid_params(self):
         """Negative Case 7: Chunker with Invalid Arguments raises ValueError"""
         docs = [{"text": "Hello", "metadata": {}}]
         with self.assertRaises(ValueError):
