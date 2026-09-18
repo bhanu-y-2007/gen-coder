@@ -357,8 +357,8 @@ function SupportConsole() {
             </span>
 
             <span>
-              Intensity:{" "}
-              {session.emotion?.intensity ?? "-"}
+              Frustration:{" "}
+              {session.emotion?.intensity ?? session.frustration_level ?? "-"}/5
             </span>
           </div>
         </div>
@@ -408,9 +408,16 @@ function SupportConsole() {
                 >
 
                   <div className="message-role">
-                    {item.role === "customer"
-                      ? "Customer"
-                      : "You"}
+                    {item.role === "customer" ? (
+                      <>
+                        Customer{" "}
+                        <span style={{ fontSize: "0.85em", opacity: 0.85, marginLeft: "6px" }}>
+                          (Frustration: {item.frustration_level ?? session.emotion?.intensity ?? 3}/5)
+                        </span>
+                      </>
+                    ) : (
+                      "You"
+                    )}
                   </div>
 
                   <div className="message-content">
@@ -479,8 +486,8 @@ function SupportConsole() {
               </strong>
 
               <p>
-                Intensity:{" "}
-                {session.emotion?.intensity ?? "-"} / 10
+                Frustration:{" "}
+                {session.emotion?.intensity ?? session.frustration_level ?? "-"} / 5
               </p>
             </div>
 

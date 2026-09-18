@@ -11,7 +11,7 @@ function SessionConfiguration() {
     scenario: "delayed_order",
     initial_emotion: "frustrated",
     severity: "medium",
-    patience: 5,
+    patience: 3,
   });
 
   const [loading, setLoading] = useState(false);
@@ -376,7 +376,7 @@ function SessionConfiguration() {
               type="range"
               name="patience"
               min="1"
-              max="10"
+              max="5"
               value={form.patience}
               onChange={handleChange}
             />
@@ -384,9 +384,9 @@ function SessionConfiguration() {
 
             <div className="slider-labels">
 
-              <span>Impatient</span>
+              <span>1 (Calm)</span>
 
-              <span>Patient</span>
+              <span>5 (Aggressive)</span>
 
             </div>
 

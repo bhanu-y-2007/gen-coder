@@ -15,14 +15,20 @@ MAX_TOKENS = int(os.getenv("MAX_TOKENS", "250"))
 # Simulator defaults
 DEFAULT_PERSONA = "frustrated"
 DEFAULT_SCENARIO = "refund_request"
-DEFAULT_INITIAL_EMOTION = "angry"
-DEFAULT_ISSUE_SEVERITY = 7          # 1-10
-DEFAULT_PATIENCE_LEVEL = 5          # 1-10 (lower = less patient)
+DEFAULT_INITIAL_EMOTION = "frustrated"
+DEFAULT_FRUSTRATION_LEVEL = 3       # 1-5 scale
+DEFAULT_ISSUE_SEVERITY = 4          # 1-5
+DEFAULT_PATIENCE_LEVEL = 3          # 1-5
 DEFAULT_EXPECTED_RESOLUTION = "full_refund"
 
-# Emotion thresholds
+# Emotion thresholds (1 to 5 scale)
+# 1 = Very calm / Satisfied
+# 2 = Slightly concerned
+# 3 = Moderately frustrated
+# 4 = Highly frustrated
+# 5 = Extremely angry / About to escalate
 EMOTION_SCALE_MIN = 1
-EMOTION_SCALE_MAX = 10
+EMOTION_SCALE_MAX = 5
 
 # Logging
 LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")

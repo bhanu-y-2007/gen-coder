@@ -1,108 +1,138 @@
 """
-Customer Simulator Agent
+Customer Simulator Agent (Frustration Scale: 1 to 5)
 
-PERSONA:
-Controls how the customer communicates.
+FRUSTRATION LEVEL SYSTEM:
+  1 = Very calm / Satisfied
+  2 = Slightly concerned
+  3 = Moderately frustrated
+  4 = Highly frustrated
+  5 = Extremely angry / About to escalate
 
-FRUSTRATION LEVEL:
-Controls the customer's emotional intensity from 1 to 10.
-
-1-2  = Calm
-3-4  = Concerned
-5-6  = Frustrated
-7-8  = Angry
-9-10 = Furious
-
-IMPORTANT:
-There is NO patience level.
-Frustration level is the emotional control.
+FRUSTRATION DYNAMICS:
+  - Clear, correct, helpful, and removes all doubts -> Reduce frustration by 2 to 4 points (e.g. 5->1, 5->2, 4->1, 3->1)
+  - Partially helpful but still has some doubt -> Reduce by 1 point only (e.g. 5->4, 4->3, 3->2, 2->1)
+  - Neutral / repetitive response -> 0 change
+  - Confusing, incomplete, or wrong -> Increase frustration by 1 or 2 points
+  - Very bad or ignores the issue -> Increase frustration by 2 or 3 points
 """
 
 import uuid
 import json
 import re
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple, Set
 
 
-PERSONAS = {
+PERSONAS: Dict[str, Dict[str, Any]] = {
     "polite": {
         "name": "Polite Customer",
-        "style": "respectful and cooperative"
+        "style": "respectful, formal, cooperative, patient",
+        "prefix_calm": "Thank you. ",
+        "prefix_frustrated": "I appreciate your response, but ",
+        "prefix_angry": "With all due respect, I am very disappointed. "
     },
     "concerned": {
         "name": "Concerned Customer",
-        "style": "worried and asks for clarification"
+        "style": "worried, seeks reassurance and detailed clarification",
+        "prefix_calm": "I feel much better knowing that. ",
+        "prefix_frustrated": "I'm quite worried about this situation. ",
+        "prefix_angry": "This is becoming very concerning for me. "
+    },
+    "confused": {
+        "name": "Confused Customer",
+        "style": "uncertain, asks clarifying questions, needs step-by-step guidance",
+        "prefix_calm": "Ah, that makes sense now. ",
+        "prefix_frustrated": "I'm still a bit confused about this. ",
+        "prefix_angry": "I don't understand why this is so complicated. "
     },
     "frustrated": {
         "name": "Frustrated Customer",
-        "style": "impatient and wants a concrete answer"
+        "style": "impatient, curt, expects concrete resolution and timelines",
+        "prefix_calm": "Glad we are finally getting this sorted. ",
+        "prefix_frustrated": "I need a direct answer here. ",
+        "prefix_angry": "I am really frustrated with how this is being handled. "
     },
     "angry": {
         "name": "Angry Customer",
-        "style": "firm, demanding and urgent"
+        "style": "firm, demanding, urgent, low tolerance for delays or excuses",
+        "prefix_calm": "Thank you for fixing this promptly. ",
+        "prefix_frustrated": "This delay is unacceptable. ",
+        "prefix_angry": "I expect this resolved immediately without more excuses! "
     },
     "furious": {
         "name": "Furious Customer",
-        "style": "very strong dissatisfaction and escalation"
+        "style": "extreme dissatisfaction, demands immediate escalation or manager",
+        "prefix_calm": "Finally, someone took care of this. ",
+        "prefix_frustrated": "I am on the verge of escalating this. ",
+        "prefix_angry": "This is completely unacceptable! Connect me to a supervisor right now! "
+    },
+    "impatient": {
+        "name": "Impatient Customer",
+        "style": "rushed, brief, hates waiting or long explanations",
+        "prefix_calm": "Good, let's wrap this up quickly. ",
+        "prefix_frustrated": "Can we speed this up please? ",
+        "prefix_angry": "I don't have time for this back and forth! "
     }
 }
 
 
-SCENARIOS = {
+SCENARIOS: Dict[str, Dict[str, Any]] = {
     "refund_request": {
         "name": "Refund Request",
-        "issue": "the damaged product I received",
-        "goal": "a full refund"
+        "issue": "the damaged product I received (Order #ORD-78421)",
+        "goal": "a full refund to original payment method",
+        "details": "Item arrived cracked in the packaging 12 days ago."
     },
-
     "delayed_order": {
         "name": "Delayed Order",
-        "issue": "my order that has not arrived",
-        "goal": "a clear delivery update"
+        "issue": "my order #ORD-39215 that has not arrived",
+        "goal": "a firm delivery date or immediate replacement/refund",
+        "details": "Promised delivery was 4 days ago, tracking has not updated."
     },
-
     "payment_failure": {
         "name": "Payment Failure",
-        "issue": "the payment that keeps failing",
-        "goal": "a clear payment solution"
+        "issue": "my payment that keeps declining and card charge issue",
+        "goal": "successful payment and immediate service activation",
+        "details": "Charged $29.99 but account is still showing inactive/declined."
     },
-
     "account_issue": {
         "name": "Account Access Issue",
-        "issue": "my account that I cannot access",
-        "goal": "my account access to be restored"
+        "issue": "being locked out of my premium account",
+        "goal": "my account access and subscription benefits to be restored",
+        "details": "Password reset link expired and account locked after 3 attempts."
     },
-
     "cancellation": {
         "name": "Cancellation Request",
-        "issue": "my subscription",
-        "goal": "confirmation that it is cancelled"
+        "issue": "my annual subscription renewal",
+        "goal": "confirmation that the subscription is cancelled and charges stopped",
+        "details": "Annual plan renewing soon, want to stop auto-billing immediately."
     }
+}
+
+
+EMOTION_MAP = {
+    1: "Very calm / Satisfied",
+    2: "Slightly concerned",
+    3: "Moderately frustrated",
+    4: "Highly frustrated",
+    5: "Extremely angry / About to escalate"
 }
 
 
 def get_emotion(level: int) -> str:
-    if level <= 2:
-        return "Calm"
-    elif level <= 4:
-        return "Concerned"
-    elif level <= 6:
-        return "Frustrated"
-    elif level <= 8:
-        return "Angry"
-    else:
-        return "Furious"
+    level = max(1, min(5, int(level)))
+    return EMOTION_MAP[level]
 
 
 def get_band(level: int) -> str:
-    if level <= 2:
+    level = max(1, min(5, int(level)))
+    if level == 1:
         return "calm"
-    elif level <= 4:
+    elif level == 2:
         return "concerned"
-    elif level <= 6:
+    elif level == 3:
         return "frustrated"
-    elif level <= 8:
+    elif level == 4:
         return "angry"
     else:
         return "furious"
@@ -114,17 +144,16 @@ class CustomerSimulator:
         self,
         persona: str = "frustrated",
         scenario: str = "refund_request",
-        frustration_level: int = 5,
+        frustration_level: int = 3,
         expected_resolution: str = "full_refund",
         session_id: Optional[str] = None,
         use_llm: bool = False,
         **kwargs
     ):
-
         self.session_id = session_id or str(uuid.uuid4())[:8]
 
-        self.persona_name = persona.lower().strip()
-        self.scenario_name = scenario.lower().strip()
+        self.persona_name = persona.lower().strip() if persona else "frustrated"
+        self.scenario_name = scenario.lower().strip() if scenario else "refund_request"
 
         if self.persona_name not in PERSONAS:
             self.persona_name = "frustrated"
@@ -132,916 +161,738 @@ class CustomerSimulator:
         if self.scenario_name not in SCENARIOS:
             self.scenario_name = "refund_request"
 
-        self.frustration_level = max(
-            1,
-            min(10, int(frustration_level))
-        )
+        # Frustration scale 1 to 5 (default 3)
+        try:
+            val = int(frustration_level)
+            if val > 5:
+                val = max(1, min(5, round(val / 2)))
+        except (ValueError, TypeError):
+            val = 3
 
+        self.frustration_level = max(1, min(5, val))
         self.expected_resolution = expected_resolution
 
-        self.history = []
-
+        self.history: List[Dict[str, Any]] = []
         self.turn_count = 0
-
         self.finished = False
 
-        # Keeps track of messages already displayed.
-        self.used_messages = set()
+        # Set of already used messages to ensure no repetition
+        self.used_messages: Set[str] = set()
 
-        # Log folder
+        # Log file
         self.log_dir = Path("logs")
         self.log_dir.mkdir(exist_ok=True)
-
-        self.log_path = (
-            self.log_dir /
-            f"session_{self.session_id}.json"
-        )
-
+        self.log_path = self.log_dir / f"session_{self.session_id}.json"
         self._save_log()
-
 
     # ==========================================================
     # SET FRUSTRATION LEVEL
     # ==========================================================
-
     def set_frustration_level(self, level: int) -> int:
-
-        self.frustration_level = max(
-            1,
-            min(10, int(level))
-        )
-
+        try:
+            val = int(level)
+            if val > 5:
+                val = max(1, min(5, round(val / 2)))
+        except (ValueError, TypeError):
+            val = 3
+        self.frustration_level = max(1, min(5, val))
         return self.frustration_level
-
 
     # ==========================================================
     # START SESSION
     # ==========================================================
-
     def start(self):
-
-        message = self._generate_customer_message(
-            opening=True
+        message = self._generate_customer_message(opening=True)
+        self._record("customer", message)
+        return self._build_response(
+            message,
+            extra={
+                "analysis": {
+                    "quality": "initial_state",
+                    "delta": 0,
+                    "reason": f"Session initialized at Frustration Level {self.frustration_level}/5 ({get_emotion(self.frustration_level)})."
+                }
+            }
         )
 
-        self._record(
-            "customer",
-            message
-        )
-
-        return self._build_response(message)
-
-
     # ==========================================================
-    # AGENT REPLY
+    # AGENT REPLY & DYNAMIC FRUSTRATION UPDATE
     # ==========================================================
-
-    def respond(self, agent_message: str):
-
+    def respond(self, agent_message: Optional[str]):
         if self.finished:
-
             return self._build_response(
                 "Thank you. This conversation has already been completed.",
-                {
-                    "status": "already_finished"
-                }
+                extra={"status": "already_finished"}
             )
 
-        # Handle None or empty agent message safely
         safe_message = str(agent_message) if agent_message is not None else ""
 
         # Record agent message
-        self._record(
-            "agent",
-            safe_message
-        )
-
-        text = safe_message.lower()
+        self._record("agent", safe_message)
 
         # ------------------------------------------------------
-        # DYNAMIC FRUSTRATION EVALUATION BASED ON AGENT REPLY
+        # 1. ANALYZE AGENT REPLY QUALITY & CALCULATE DELTA
         # ------------------------------------------------------
-        delta = self._evaluate_agent_reply(safe_message)
-
-        # Apply dynamic delta (bounded between 1 and 10)
-        self.frustration_level = max(
-            1,
-            min(10, self.frustration_level + delta)
-        )
+        quality, delta, reason = self._evaluate_agent_reply(safe_message)
 
         # ------------------------------------------------------
-        # RESOLUTION
+        # 2. UPDATE FRUSTRATION LEVEL (CLAMPED 1 TO 5)
         # ------------------------------------------------------
+        old_level = self.frustration_level
+        self.frustration_level = max(1, min(5, self.frustration_level + delta))
 
-        if (
-            self._is_resolved(text)
-            and self.frustration_level <= 4
-        ):
-
+        # ------------------------------------------------------
+        # 3. CHECK FOR RESOLUTION
+        # ------------------------------------------------------
+        text_lower = safe_message.lower()
+        if self._is_resolved(text_lower) and self.frustration_level <= 2:
             self.finished = True
-
-            message = self._closing_message()
-
-            self._record(
-                "customer",
-                message
-            )
-
+            closing_msg = self._closing_message()
+            self._record("customer", closing_msg)
             return self._build_response(
-                message,
-                {
-                    "status": "resolved"
+                closing_msg,
+                extra={
+                    "status": "resolved",
+                    "analysis": {
+                        "quality": quality,
+                        "old_level": old_level,
+                        "new_level": self.frustration_level,
+                        "delta": delta,
+                        "reason": f"{reason} Issue is fully resolved."
+                    }
                 }
             )
 
         # ------------------------------------------------------
-        # NEXT CUSTOMER MESSAGE
+        # 4. GENERATE NEXT CUSTOMER MESSAGE MATCHING NEW LEVEL
         # ------------------------------------------------------
+        customer_msg = self._generate_customer_message(opening=False)
+        self._record("customer", customer_msg)
 
-        message = self._generate_customer_message(
-            opening=False
+        return self._build_response(
+            customer_msg,
+            extra={
+                "analysis": {
+                    "quality": quality,
+                    "old_level": old_level,
+                    "new_level": self.frustration_level,
+                    "delta": delta,
+                    "reason": reason
+                }
+            }
         )
 
-        self._record(
-            "customer",
-            message
-        )
-
-        return self._build_response(message)
-
-
     # ==========================================================
-    # EVALUATE AGENT REPLY & DYNAMIC FRUSTRATION CHANGE
+    # EVALUATE AGENT REPLY QUALITY (FRUSTRATION DYNAMICS)
     # ==========================================================
-
-    def _evaluate_agent_reply(self, agent_message: Optional[str]) -> int:
+    def _evaluate_agent_reply(self, agent_message: str) -> Tuple[str, int, str]:
         """
-        Dynamically calculates the change in customer frustration level
-        based on the agent's message quality, tone, empathy, ownership,
-        actionability, resolution, and conversation context.
-
-        Returns delta:
-          Negative value (e.g. -1, -2, -3, -4, -5) -> decreases frustration
-          Zero -> no change
-          Positive value (e.g. +1, +2, +3) -> increases frustration
+        Analyzes the agent reply quality according to core rules:
+        - Clear, correct, helpful, and removes all doubts -> Reduce frustration by 2 to 4 points (e.g. 5->1, 5->2, 4->1, 3->1)
+        - Partially helpful but still has some doubt -> Reduce by 1 point only
+        - Neutral / repetitive response -> 0 change
+        - Confusing, incomplete, or wrong -> Increase frustration by 1 or 2 points
+        - Very bad or ignores the issue -> Increase frustration by 2 or 3 points
         """
         if not agent_message or not agent_message.strip():
-            # Missing or empty response increases frustration
-            return 1
+            return "very_bad", 2, "Agent reply is empty or missing."
 
         raw_text = agent_message.strip()
 
-        # Context awareness: check if agent is repeating the previous agent message
+        # Context check: repetitive responses
         past_agent_messages = [
             m.get("content", "").strip().lower()
             for m in self.history
             if m.get("role") == "agent"
         ]
-        # Note: current message is at past_agent_messages[-1], previous is at [-2]
         if len(past_agent_messages) >= 2 and raw_text.lower() == past_agent_messages[-2]:
-            # Repetitive response without new action yields no reduction (0 change)
-            return 0
+            return "repetitive", 0, "Agent repeated previous message verbatim without adding new information."
 
-        # Punctuation & space normalization so "inconvenience.I" -> "inconvenience . I"
+        # Normalize punctuation and spacing
         normalized = re.sub(r"([.,!?;:])", r" \1 ", raw_text)
         normalized = re.sub(r"\s+", " ", normalized).lower()
         words = normalized.split()
         word_count = len(words)
-
         text = " " + normalized + " "
 
         # ------------------------------------------------------
-        # 1. EMPATHY & APOLOGY SIGNALS
+        # 1. VERY BAD / DISMISSIVE / IGNORING SIGNALS (PENALTY)
         # ------------------------------------------------------
-        empathy_score = 0
-
-        # Sincere / Deep apologies
-        deep_apology_pats = [
-            r"\b(sincere(ly)?\s+apolog(y|ize|ise|ies))\b",
-            r"\b(deeply\s+apolog(y|ize|ise|ies))\b",
-            r"\b(apolog(ize|ise|y)\s+for\s+the\s+(delay|inconvenience|trouble|confusion|wait|frustration))\b",
-            r"\b(sorry\s+for\s+the\s+(delay|inconvenience|trouble|confusion|wait|frustration))\b",
-            r"\b(sorry\s+(that\s+)?you\s+(had\s+to|have\s+been)\s+wait(ing)?)\b",
-            r"\b(my\s+(sincerest\s+)?apologies)\b",
-            r"\b(truly\s+sorry)\b",
-        ]
-        if any(re.search(pat, text, re.I) for pat in deep_apology_pats):
-            empathy_score += 2
-        elif re.search(r"\b(apolog(y|ize|ise|ies)|sorry)\b", text, re.I):
-            empathy_score += 1
-
-        # Validation of customer's feelings / situation
-        validation_pats = [
-            r"\b(completely\s+understand(\s+your)?\s+(concern|frustration|situation|disappointment)?)\b",
-            r"\b(understand\s+(your|the)\s+(concern|frustration|situation|disappointment|annoyance|urgency))\b",
-            r"\b(understand\s+(that\s+)?you\s+have\s+(waited|been\s+waiting))\b",
-            r"\b(waited\s+long\s+enough)\b",
-            r"\b(appreciate\s+your\s+(patience|understanding|cooperation|time))\b",
-            r"\b(thank\s+you\s+for\s+your\s+(patience|understanding|cooperation))\b",
-            r"\b(can\s+understand\s+how\s+(frustrating|upsetting|annoying|difficult))\b",
-            r"\b(that\s+must\s+be\s+(very\s+)?(frustrating|upsetting|concerning|annoying))\b",
-            r"\b(valid\s+concern|hear\s+you\s+loud\s+and\s+clear)\b",
-            r"\b(know\s+how\s+(important|frustrating)\s+this\s+is)\b",
-        ]
-        if any(re.search(pat, text, re.I) for pat in validation_pats):
-            empathy_score += 2
-        elif re.search(r"\b(understand|patience|empathize|hear\s+you)\b", text, re.I):
-            empathy_score += 1
-
-        empathy_score = min(empathy_score, 4)
-
-        # ------------------------------------------------------
-        # 2. OWNERSHIP & ACTIVE INVESTIGATION SIGNALS
-        # ------------------------------------------------------
-        ownership_score = 0
-
-        strong_ownership_pats = [
-            r"\b(take\s+(full\s+)?ownership(\s+of\s+this)?)\b",
-            r"\b(take\s+full\s+responsibility)\b",
-            r"\b(personally\s+(ensure|handle|take\s+care|make\s+sure|verify|investigate|look\s+into))\b",
-            r"\b(carefully\s+check(ed)?(\s+the\s+details)?)\b",
-            r"\b(review(ing)?\s+(the\s+)?(status|details|account|request|order))\b",
-            r"\b(investigat(e|ing|ed)\s+(this|the\s+issue|the\s+request|the\s+matter))\b",
-            r"\b(looking\s+into\s+this\s+(right\s+now|immediately|for\s+you|now))\b",
-            r"\b(escalat(ed|ing|e)\s+(this|to\s+a\s+manager|to\s+our\s+senior|to\s+supervisor|immediately))\b",
-            r"\b(priorit(y|ize|ized))\b",
-            r"\b(working\s+to\s+ensure)\b",
-            r"\b(make\s+this\s+right(\s+for\s+you)?)\b",
-        ]
-        if any(re.search(pat, text, re.I) for pat in strong_ownership_pats):
-            ownership_score += 2
-        elif re.search(r"\b(check(ed)?|review(ing)?|investigat(e|ing)?|look(ing)?\s+into|verify(ing)?|confirm(ed|ing)?|assist|help|handle|ownership)\b", text, re.I):
-            ownership_score += 1
-
-        ownership_score = min(ownership_score, 3)
-
-        # ------------------------------------------------------
-        # 3. CONCRETE RESOLUTION, ACTIONS & TIMELINES
-        # ------------------------------------------------------
-        resolution_score = 0
-
-        # Full direct resolution phrases
-        full_resolution_pats = [
-            r"\b(refund\s+(has\s+been|is|will\s+be)\s+(processed|issued|completed|approved|credited))\b",
-            r"\b(processed\s+(your|the)\s+refund)\b",
-            r"\b(full\s+refund\s+(has\s+been\s+)?(issued|credited|processed|approved))\b",
-            r"\b(amount\s+(will\s+be|has\s+been)\s+credited\s+back)\b",
-            r"\b(credited\s+back\s+to\s+(your|the\s+original)\s+(payment|card|account|method))\b",
-            r"\b(get\s+(your|the)\s+refund\s+resolved)\b",
-            r"\b(resolve\s+(your|the)\s+refund)\b",
-            r"\b(access\s+(has\s+been|is)\s+restored)\b",
-            r"\b(unlocked\s+(your|the)\s+account)\b",
-            r"\b(subscription\s+(has\s+been|is)\s+cancelled)\b",
-            r"\b(cancellation\s+confirmed)\b",
-            r"\b(replacement\s+(has\s+been|is)\s+(sent|shipped|dispatched))\b",
-            r"\b(order\s+(has\s+been\s+)?(delivered|shipped|dispatched))\b",
-            r"\b(tracking\s+(number|link|details))\b",
-            r"\b(delivery\s+date\s+is)\b",
-        ]
-        if any(re.search(pat, text, re.I) for pat in full_resolution_pats):
-            resolution_score += 3
-        elif re.search(r"\b(refund|credited|resolve(d)?|fixed|complete(d)?|process(ed)?|restored|cancelled)\b", text, re.I):
-            resolution_score += 1
-
-        # Concrete timelines and urgency / next steps
-        clear_timeline_pats = [
-            r"\b(within\s+\d+\s+(hours?|days?|business\s+days?|minutes?))\b",
-            r"\b(by\s+(tomorrow|today|end\s+of\s+day|the\s+end\s+of\s+the\s+week))\b",
-            r"\b(provide\s+you\s+with\s+a\s+clear\s+update)\b",
-            r"\b(next\s+steps?\s+(are|will\s+be)\s+explained)\b",
-            r"\b(definite\s+(timeline|answer|update))\b",
-            r"\b(as\s+soon\s+as\s+possible)\b",
-            r"\b(immediately|right\s+away|right\s+now|\bnow\b)\b",
-            r"\b(step[- ]by[- ]step)\b",
-        ]
-        if any(re.search(pat, text, re.I) for pat in clear_timeline_pats):
-            resolution_score += 2
-        elif re.search(r"\b(timeline|next\s+step(s)?|update|explained|status)\b", text, re.I):
-            resolution_score += 1
-
-        resolution_score = min(resolution_score, 4)
-
-        # ------------------------------------------------------
-        # 4. REASSURANCE & COURTESY SIGNALS
-        # ------------------------------------------------------
-        tone_score = 0
-        reassurance_pats = [
-            r"\b(rest\s+assured)\b",
-            r"\b(make\s+sure\s+that)\b",
-            r"\b(ensure\s+that)\b",
-            r"\b(committed\s+to\s+(resolving|helping))\b",
-            r"\b(happy\s+to\s+help|glad\s+to\s+assist|here\s+to\s+help)\b",
-            r"\b(thank\s+you\s+for\s+giving\s+us\s+the\s+opportunity)\b",
-        ]
-        if any(re.search(pat, text, re.I) for pat in reassurance_pats):
-            tone_score += 1
-
-        if re.search(r"\b(thank\s+you|thanks|appreciate)\b", text, re.I):
-            tone_score += 1
-
-        tone_score = min(tone_score, 2)
-
-        # ------------------------------------------------------
-        # 5. LENGTH & THOUGHTFULNESS BONUS
-        # ------------------------------------------------------
-        length_bonus = 0
-        if word_count >= 25 and (empathy_score + ownership_score + resolution_score >= 3):
-            length_bonus = 1
-
-        # ------------------------------------------------------
-        # 6. NEGATIVE SIGNALS & PENALTIES
-        # ------------------------------------------------------
-        penalty = 0
-
-        # Explicitly dismissive / rejecting accountability
         blatant_dismissive = [
             r"\b(not\s+my\s+(problem|job|fault|responsibility))\b",
             r"\b(outside\s+our\s+control)\b",
             r"\b(nothing\s+(i|we)\s+can\s+do)\b",
-            r"\b(can'?t\s+help(\s+you)?|cannot\s+help(\s+you)?)\b",
-            r"\b(don'?t\s+know|do\s+not\s+know)\b",
+            r"\b(can'?t\s+help(\s+you)?|cannot\s+help(\s+you)?|unable\s+to\s+help)\b",
+            r"\b(don'?t\s+know|do\s+not\s+know|no\s+idea)\b",
             r"\b(refuse\s+to|not\s+going\s+to\s+help)\b",
             r"\b(deal\s+with\s+it)\b",
             r"\b(stop\s+complaining|stop\s+asking)\b",
         ]
-        if any(re.search(pat, text, re.I) for pat in blatant_dismissive):
-            penalty += 3
-
-        # Inflexible refusal or hostile policy shields
-        policy_blocks = [
-            r"\b(company\s+policy\s+(states|says|dictates|forbids)\s+(we\s+can'?t|no))\b",
-            r"\b(no\s+refunds?(\s+allowed|\s+ever)?)\b",
-            r"\b(final\s+sale|store\s+credit\s+only)\b",
-        ]
-        if any(re.search(pat, text, re.I) for pat in policy_blocks):
-            penalty += 2
-
-        # Blaming the customer (severe support failure)
         customer_blame = [
             r"\b(you\s+(should|must|need\s+to)\s+have\s+(known|read|checked))\b",
             r"\b(your\s+(fault|mistake|error))\b",
             r"\b(why\s+didn'?t\s+you)\b",
             r"\b(not\s+our\s+problem)\b",
         ]
-        if any(re.search(pat, text, re.I) for pat in customer_blame):
-            penalty += 3
+        stalling_without_help = [
+            r"\b(don'?t\s+have\s+(any|an)\s+update)\b",
+            r"\b(no\s+update(s)?\s+(available|yet|for\s+you)?)\b",
+            r"\b(cannot\s+give\s+(you\s+)?(an\s+update|a\s+date|a\s+time|a\s+timeline))\b",
+            r"\b(can'?t\s+(tell|give)\s+you\s+(when|anything))\b",
+            r"\b(just\s+wait|wait\s+longer|keep\s+waiting|have\s+to\s+wait)\b",
+            r"\b(try\s+again\s+later|call\s+back\s+later|check\s+back\s+later)\b",
+            r"\b(please\s+wait(\s+patiently)?)\s*$",
+        ]
+        policy_refusal = [
+            r"\b(company\s+policy\s+(states|says|dictates|forbids)\s+(we\s+can'?t|no))\b",
+            r"\b(no\s+refunds?(\s+allowed|\s+ever)?)\b",
+            r"\b(final\s+sale|store\s+credit\s+only)\b",
+        ]
 
-        # Brushoff without any empathy or action
-        if re.search(r"\b(just\s+wait|call\s+back\s+later|try\s+again\s+later|check\s+back\s+next\s+week)\b", text, re.I):
-            if empathy_score == 0 and ownership_score == 0:
-                penalty += 2
+        if any(re.search(pat, text, re.I) for pat in blatant_dismissive) or any(re.search(pat, text, re.I) for pat in customer_blame):
+            delta = 3 if self.frustration_level <= 2 else 2
+            return "very_bad", delta, "Agent response was dismissive, hostile, or blamed the customer."
+
+        if any(re.search(pat, text, re.I) for pat in stalling_without_help) or any(re.search(pat, text, re.I) for pat in policy_refusal):
+            delta = 2 if self.frustration_level <= 3 else 1
+            return "very_bad", delta, "Agent response was unhelpful, stalled without action, or rigidly refused assistance."
 
         # ------------------------------------------------------
-        # COMPUTE TOTAL QUALITY SCORE
+        # 2. CONFUSING, INCOMPLETE, OR WRONG SIGNALS
         # ------------------------------------------------------
-        total_positive = empathy_score + ownership_score + resolution_score + tone_score + length_bonus
-        net_score = total_positive - penalty
+        confusing_pats = [
+            r"\b(what\s+(is|was)\s+your\s+(issue|problem|order|name)\s+again)\b",
+            r"\b(can\s+you\s+repeat\s+everything)\b",
+            r"\b(who\s+are\s+you)\b",
+            r"\b(i\s+guess|maybe|perhaps|not\s+sure)\b",
+        ]
+        if any(re.search(pat, text, re.I) for pat in confusing_pats):
+            return "confusing_or_incomplete", 1, "Agent asked for already provided info or sounded uncertain."
 
-        current_level = self.frustration_level
+        if word_count <= 2 and not re.search(r"\b(refunded|resolved|cancelled|unlocked|shipped)\b", text, re.I):
+            return "confusing_or_incomplete", 1, "Agent response was too brief and lacked helpful substance."
 
         # ------------------------------------------------------
-        # PROPORTIONAL DYNAMIC DELTA MAPPING
-        # - Highly effective reply: larger decrease (-2 to -3)
-        # - Moderately helpful reply: small decrease (-1 to -2)
-        # - Mild helpful reply: small decrease (-1)
-        # - Neutral / repetitive reply: NO CHANGE (0)
-        # - Vague / unhelpful reply: small increase (+1)
-        # - Blatantly dismissive / blaming reply: moderate increase (+2)
+        # 3. HELPFUL & RESOLUTION SIGNALS
         # ------------------------------------------------------
-        if net_score >= 6:
-            # Highly effective, comprehensive resolution + empathy + timeline
-            return -3 if current_level >= 8 else -2
-        elif net_score >= 3:
-            # Moderately helpful supportive reply (empathy + checking status)
-            return -2 if current_level >= 7 else -1
-        elif net_score >= 1:
-            # Mild / standard helpful reply
-            return -1
-        elif net_score == 0:
-            # Neutral response (no clear help, no rudeness) -> NO CHANGE
-            return 0
-        elif net_score in (-1, -2):
-            # Vague / unhelpful
-            return 1
-        else:
-            # Dismissive / blaming customer / policy refusal
-            return 2
+        # Sincere apology or empathy
+        has_deep_apology = bool(re.search(
+            r"\b(sincere(ly)?\s+apolog(y|ize|ise|ies)|deeply\s+apolog(y|ize|ise|ies)|apolog(ize|ise|y|ies)|sorry|my\s+apologies)\b",
+            text, re.I
+        ))
+        has_empathy = has_deep_apology or bool(re.search(r"\b(understand|sorry|apolog|patience|empathize|appreciate)\b", text, re.I))
 
+        # Active ownership / investigation
+        has_strong_ownership = bool(re.search(
+            r"\b(take\s+(full\s+)?ownership|take\s+full\s+responsibility|personally\s+(ensure|handle|take\s+care|make\s+sure|verify|investigate)|investigat(e|ing|ed)|escalat(ed|ing|e))\b",
+            text, re.I
+        ))
+        has_general_helpful = has_strong_ownership or bool(re.search(r"\b(help|assist|check(ing)?|review(ing)?|look(ing)?\s+into|verify(ing)?|process(ed|ing)?|confirm(ed|ing)?)\b", text, re.I))
+
+        # Confirmed resolution
+        has_confirmed_resolution = bool(re.search(
+            r"\b(refund\s+(has\s+been|is|will\s+be)?\s*(processed|issued|completed|approved|credited)|"
+            r"process(ed)?\s+(your|the)?\s*(full\s+)?refund|"
+            r"full\s+refund\s+(has\s+been\s+)?(issued|credited|processed|approved)|"
+            r"amount\s+(will\s+be|has\s+been)\s+credited\s+back|"
+            r"credited\s+back|"
+            r"access\s+(has\s+been|is)?\s*restored|"
+            r"unlocked\s+(your|the)?\s*account|"
+            r"subscription\s+(has\s+been|is)?\s*cancelled|"
+            r"cancellation\s+confirmed|"
+            r"replacement\s+(has\s+been|is)?\s*(sent|shipped|dispatched)|"
+            r"order\s+(has\s+been\s+)?(delivered|shipped|dispatched)|"
+            r"tracking\s+(number|link|details)|"
+            r"delivery\s+date\s+is)\b",
+            text, re.I
+        ))
+
+        # Clear timeline commitment
+        has_clear_timeline = bool(re.search(
+            r"\b(within\s+\d+\s+(hours?|days?|business\s+days?|minutes?)|by\s+(tomorrow|today|end\s+of\s+day|the\s+end\s+of\s+the\s+week)|immediately|right\s+away|guaranteed)\b",
+            text, re.I
+        ))
+
+        # ------------------------------------------------------
+        # 4. MAP TO DELTA
+        # ------------------------------------------------------
+        current = self.frustration_level
+
+        # Case A: Clear, correct, helpful, and removes all doubts
+        # Must have: confirmed resolution OR (clear timeline + strong ownership/empathy)
+        if has_confirmed_resolution or (has_clear_timeline and (has_deep_apology or has_strong_ownership)):
+            if current >= 5:
+                delta = -4 if (has_deep_apology and has_clear_timeline and has_confirmed_resolution) else -3  # 5 -> 1 or 5 -> 2
+            elif current == 4:
+                delta = -3  # 4 -> 1
+            elif current == 3:
+                delta = -2  # 3 -> 1
+            elif current == 2:
+                delta = -1  # 2 -> 1
+            else:
+                delta = 0
+            return "clear_helpful_removes_doubts", delta, "Agent provided a clear, empathetic, and definitive resolution that removes doubts."
+
+        # Case B: Partially helpful but still has some doubt
+        # E.g. basic assistance or polite acknowledgment without complete closure
+        if has_general_helpful or has_empathy:
+            delta = -1 if current > 1 else 0
+            return "partially_helpful", delta, "Agent response was helpful and supportive, but some follow-up remains."
+
+        # Case C: Neutral response (e.g. "Let me see.", "Okay.")
+        if re.search(r"\b(ok|okay|let\s+me\s+see|i\s+see|got\s+it|noted|alright)\b", text, re.I):
+            return "neutral", 0, "Agent response was neutral without active help or offense."
+
+        # Fallback: minor increase for vague responses
+        return "incomplete", 1, "Agent response was vague or did not address the customer's question directly."
 
     # ==========================================================
     # RESOLUTION CHECK
     # ==========================================================
-
-    def _is_resolved(self, text: str):
-
+    def _is_resolved(self, text: str) -> bool:
         checks = {
-
             "refund_request": [
                 "refund has been processed",
                 "refund processed",
+                "full refund has been issued",
                 "full refund",
-                "refund completed"
+                "refund completed",
+                "credited back to your original payment"
             ],
-
             "delayed_order": [
                 "delivery date",
                 "order has arrived",
                 "order delivered",
-                "delivered"
+                "delivered",
+                "tracking link",
+                "replacement has been sent",
+                "replacement has been shipped"
             ],
-
             "payment_failure": [
                 "payment is successful",
                 "payment succeeded",
                 "payment fixed",
-                "payment completed"
+                "payment completed",
+                "charge corrected",
+                "subscription activated"
             ],
-
             "account_issue": [
                 "access restored",
                 "account restored",
                 "account is unlocked",
-                "unlocked"
+                "unlocked",
+                "password reset email sent",
+                "access has been restored"
             ],
-
             "cancellation": [
                 "cancelled",
                 "cancellation confirmed",
-                "subscription cancelled"
+                "subscription cancelled",
+                "auto-renew stopped",
+                "billing stopped"
             ]
         }
-
-        for phrase in checks.get(
-            self.scenario_name,
-            []
-        ):
-
+        for phrase in checks.get(self.scenario_name, []):
             if phrase in text:
                 return True
-
         return False
 
-
     # ==========================================================
-    # CUSTOMER MESSAGE GENERATOR
+    # CUSTOMER MESSAGE GENERATOR (1 TO 5 FRUSTRATION LEVELS)
     # ==========================================================
-
-    def _generate_customer_message(
-        self,
-        opening=False
-    ):
-
+    def _generate_customer_message(self, opening: bool = False) -> str:
         level = self.frustration_level
-
-        band = get_band(level)
-
-        scenario = SCENARIOS[
-            self.scenario_name
-        ]
+        persona = PERSONAS[self.persona_name]
+        scenario = SCENARIOS[self.scenario_name]
 
         # ------------------------------------------------------
-        # Improved natural messages for every turn
+        # COMPREHENSIVE MESSAGE POOL (Scenarios x 5 Levels)
         # ------------------------------------------------------
-
-        message_sets = {
-
+        message_catalog = {
             "refund_request": {
-
-                "calm": [
-                    "Hi, I received a damaged product in my order. Could you please help me with a refund?",
-                    "Hello, the item I received arrived damaged. I’d like to request a refund when you have a moment.",
-                    "Could you please check the status of my refund request for the damaged product?",
-                    "Thank you. Could you let me know what the next step is for processing the refund?",
-                    "I appreciate your help. Is there any additional information you need from me regarding the refund?",
-                    "Just following up politely — has there been any update on my refund for the damaged item?"
+                1: [
+                    "Hi, I received my order #ORD-78421 with a damaged item. Could you please assist me with a refund when you have a moment?",
+                    "Hello! I wanted to check in about getting a refund for my damaged headphones. I appreciate your help.",
+                    "Thank you so much. Could you please confirm the next steps for my refund?",
+                    "I really appreciate your assistance. Everything is clear on my end, thank you!",
+                    "Thank you for looking into my refund so politely. Let me know if you need any details.",
+                    "That sounds wonderful, thank you for guiding me through the refund process.",
+                    "I'm very satisfied with how this is being handled. Thank you!",
+                    "Great, thank you for clarifying everything about my refund so clearly."
                 ],
-
-                "concerned": [
-                    "I'm a little concerned about my refund. Could you please check the status?",
-                    "I'm worried that my refund has not been completed yet. Can you give me an update?",
-                    "Could you please explain what is happening with my refund and when I can expect it?",
-                    "I hope everything is okay with the refund process. Could you share the current status?",
-                    "I'm slightly worried because I haven't heard back about the refund yet. Any news?"
+                2: [
+                    "Hello, I'm checking on my refund request for order #ORD-78421. Is there an estimated time for it?",
+                    "I'm a little concerned about the status of my refund. Could you please verify if it's being processed?",
+                    "Could you clarify the refund steps? I just want to be sure I won't be charged extra fees.",
+                    "I haven't seen an update on my damaged item refund yet. Could you please look into it?",
+                    "I just want to ensure everything is on track for my refund. Any updates?",
+                    "Could you confirm if you received the return details for my refund request?",
+                    "I'm hoping to get this sorted soon. Could you check the latest refund status for me?",
+                    "Just following up gently on my refund request to see where things stand."
                 ],
-
-                "frustrated": [
-                    "I'm getting frustrated because my refund is still not sorted out. Can you give me a clear update?",
-                    "This refund is taking too long. Please tell me exactly what will happen next.",
-                    "I'm still waiting for my refund and I need a concrete answer. When will this be completed?",
-                    "I need a proper update on this refund. The delay is becoming frustrating.",
-                    "Can you please give me a definite timeline for the refund? This is taking longer than expected."
+                3: [
+                    "I'm getting frustrated because my refund for the damaged headphones is still pending. When will it be completed?",
+                    "This refund has been taking longer than expected. Can you give me a clear update and concrete timeline?",
+                    "I've been waiting for my money back on order #ORD-78421. What is the delay?",
+                    "I need a clear next step on this refund. Please let me know exactly when it will be processed.",
+                    "Waiting without a timeline is frustrating. Can you tell me exactly what is happening with my refund?",
+                    "I need a definitive answer regarding my refund today. This has been going on for too long.",
+                    "Please let me know who is handling my refund and when I will receive confirmation.",
+                    "I am not happy having to follow up multiple times for a damaged product refund."
                 ],
-
-                "angry": [
-                    "This refund delay is unacceptable. I need a definite answer and timeline now.",
-                    "I'm very unhappy with this situation. Please stop giving vague answers and tell me when my refund will be completed.",
-                    "I have waited long enough. I need this refund issue handled properly now.",
-                    "I expect a clear resolution for this refund immediately. The delay is not acceptable.",
-                    "Please provide a firm timeline for my refund right now. I'm not satisfied with the current status."
+                4: [
+                    "This refund delay is unacceptable. I received a broken product and I want my money back now!",
+                    "I've waited 12 days for this refund and I'm tired of vague answers. When am I getting my money?",
+                    "I expect a firm resolution on order #ORD-78421 right now. Stop telling me to wait.",
+                    "This is getting ridiculous. Process my refund immediately or let me speak with someone who can.",
+                    "I'm extremely dissatisfied with this service. Give me a concrete confirmation of my refund immediately!",
+                    "Why is it taking so long to refund a damaged item? Fix this now without further excuses.",
+                    "I demand a clear timeline and immediate processing of my refund today!",
+                    "I've had enough of these delays. Resolve this refund right away!"
                 ],
-
-                "furious": [
-                    "This is completely unacceptable. I need my refund resolved immediately.",
-                    "I am extremely frustrated with this refund delay. Fix this immediately or escalate the issue.",
-                    "Enough with the delays. I expect the refund to be handled now.",
-                    "I demand that this refund be processed immediately. This situation is ridiculous.",
-                    "Resolve my refund right now or escalate this to someone who can. I'm done waiting."
+                5: [
+                    "This is completely unacceptable! I demand an immediate full refund or I will dispute this charge with my bank!",
+                    "I have reached my limit with your company. Process my refund right now or transfer me to a manager immediately!",
+                    "You sent me damaged goods and are refusing to fix it quickly. I demand to speak to a supervisor NOW!",
+                    "Enough with the excuses! If my refund is not processed immediately, I am escalating this to consumer protection!",
+                    "I am furious. Resolve my refund RIGHT NOW or escalate this to management immediately!",
+                    "This is atrocious customer service. I want my $149.99 refunded instantly and a supervisor on the line!",
+                    "I refuse to wait any longer. Process the refund immediately or I am taking further action!",
+                    "Transfer me to a manager right now. I will not accept any more delays on this refund!"
                 ]
             },
-
-
             "delayed_order": {
-
-                "calm": [
-                    "Hi, my order has not arrived yet. Could you please check the latest delivery status?",
-                    "Hello, I noticed that my order is delayed. Can you tell me when it is expected to arrive?",
-                    "Could you please check the delivery status and give me an update?",
-                    "Thank you. Do you have any updated information on when my order might arrive?",
-                    "I’d appreciate it if you could look into the current status of my delayed order.",
-                    "Just checking in — is there any new update on the delivery of my order?"
+                1: [
+                    "Hi, my order #ORD-39215 hasn't arrived yet. Could you kindly check the latest delivery status for me?",
+                    "Hello! I noticed my delivery is a bit delayed. Could you share an updated arrival date when convenient?",
+                    "Thank you for looking into my delivery. I appreciate your assistance in tracking it.",
+                    "Thank you for the update on my shipment. I really appreciate your help.",
+                    "That's great news, thank you for tracking down my package so quickly.",
+                    "I appreciate you giving me the updated delivery timeline so politely.",
+                    "Thank you for keeping me informed about my order status.",
+                    "Everything looks good, thank you for your help with this shipment!"
                 ],
-
-                "concerned": [
-                    "I'm a little worried because my order is delayed. Could you please check what is happening?",
-                    "I'm concerned about the delivery delay. Can you give me a clear update?",
-                    "Could you please confirm the latest delivery information? I am not sure what to expect.",
-                    "I hope the delay isn't too serious. Could you share the current expected arrival time?",
-                    "I'm slightly concerned as the order is still delayed. Any update would be helpful."
+                2: [
+                    "Hello, I'm a bit concerned because my chair order was promised 4 days ago and tracking hasn't updated.",
+                    "I need this desk chair for my work setup this week. Could you please check where the carrier is?",
+                    "I'm slightly worried my package might be lost. Could you confirm if it's still in transit?",
+                    "Could you please verify the current location of order #ORD-39215? The tracking link seems stalled.",
+                    "I hope there hasn't been an issue with delivery. Do you have any fresh updates from the carrier?",
+                    "I just want to be sure my order will arrive soon. Could you double-check the ETA?",
+                    "Tracking hasn't moved in 3 days. Could you check what might be causing the delay?",
+                    "Could you provide an updated estimated delivery date? I need to plan around it."
                 ],
-
-                "frustrated": [
-                    "I'm getting frustrated with this delay. I need a concrete delivery update.",
-                    "My order is still delayed and this is becoming frustrating. Can you tell me when it will arrive?",
-                    "I'm tired of waiting without a clear update. Please give me a definite delivery expectation.",
-                    "This delay is frustrating. I need a clear answer about when my order will arrive.",
-                    "Please provide a proper timeline for the delivery. Waiting without updates is not helpful."
+                3: [
+                    "I'm getting frustrated with this delay. My order is 4 days late and I need a firm delivery date now.",
+                    "This is delaying my work. Please tell me exactly where my chair is and when it will arrive.",
+                    "I've been waiting without any tracking updates. What is being done to expedite my delivery?",
+                    "I need a concrete update on order #ORD-39215. Vague estimates are not helping.",
+                    "The carrier tracking has not moved. Can you contact them directly and give me a clear answer?",
+                    "I need to know if this order is actually coming or if I should request a replacement now.",
+                    "Waiting this long without an accurate ETA is really frustrating. Please look into this properly.",
+                    "Can you provide a definitive delivery date today? This delay is becoming a serious problem."
                 ],
-
-                "angry": [
-                    "This delivery delay is unacceptable. I need a definite delivery date now.",
-                    "I'm very unhappy that my order is still delayed. Give me a clear answer.",
-                    "I have waited long enough. I need this delivery issue resolved immediately.",
-                    "I expect a firm delivery date right now. The current delay is unacceptable.",
-                    "Stop the vague responses. Tell me exactly when my order will arrive."
+                4: [
+                    "This delivery delay is completely unacceptable. Tell me where my order is right now!",
+                    "I paid for timely delivery and it's 4 days overdue with no updates. Send a replacement or refund me now!",
+                    "Stop giving me generic responses. Where is my chair and when will it be at my door?",
+                    "I've waited long enough for order #ORD-39215. I need this escalated and resolved immediately!",
+                    "I can't do my work without this item. What immediate compensation or expedited solution are you offering?",
+                    "This is terrible logistics. Fix this delivery today or issue a full refund immediately!",
+                    "I demand a concrete arrival date right now. No more vague excuses.",
+                    "My package is days late and nobody has helped me. Fix this now!"
                 ],
-
-                "furious": [
-                    "Where is my order? This delay is completely unacceptable. I need a resolution immediately.",
-                    "I am extremely frustrated with this delay. Give me a definite answer now.",
-                    "Enough waiting. I need my order situation fixed immediately.",
-                    "This is ridiculous. I demand an immediate update and resolution for my delayed order.",
-                    "Resolve this delivery issue right now or escalate it. I'm done waiting."
+                5: [
+                    "Where on earth is my order?! This is completely unacceptable and I demand an immediate resolution or manager!",
+                    "I am furious about this delivery failure. Either deliver my order today or cancel it with a full refund right now!",
+                    "I have had enough of these delays and excuses! Connect me to a supervisor immediately!",
+                    "This is ridiculous! 4 days late with zero tracking. I demand immediate escalation to management right now!",
+                    "Deliver my package immediately or refund every single penny right now! I am escalating this!",
+                    "I want a manager on this chat NOW. Your delivery service has failed completely!",
+                    "I will not tolerate another second of waiting. Resolve this shipment or refund me instantly!",
+                    "Escalate this to a supervisor right now. I am done dealing with unfulfilled promises!"
                 ]
             },
-
-
             "payment_failure": {
-
-                "calm": [
-                    "Hi, my payment did not go through. Could you please help me?",
-                    "Hello, I am having trouble completing my payment. Can you check the issue?",
-                    "Could you please help me fix the payment problem?",
-                    "Thank you. Is there anything I need to do on my side to complete the payment?",
-                    "I’d appreciate your help in resolving this payment issue.",
-                    "Just following up — has there been any progress on fixing the payment problem?"
+                1: [
+                    "Hi there, I noticed a payment issue with my subscription charge. Could you please help me check it?",
+                    "Hello! My card showed a charge but my account isn't activated. Could you kindly assist me?",
+                    "Thank you for looking into my billing issue. Please let me know what you find.",
+                    "I appreciate your help in getting my payment sorted out so quickly.",
+                    "Thank you so much! Everything makes sense now regarding my account billing.",
+                    "That's wonderful, thank you for confirming my payment status.",
+                    "I really appreciate you resolving this billing inquiry so smoothly.",
+                    "Thank you for the quick and polite assistance with my payment!"
                 ],
-
-                "concerned": [
-                    "I'm concerned because my payment keeps failing. Could you please check what is wrong?",
-                    "I'm a little worried about the failed payment. Can you explain the next step?",
-                    "Could you please confirm why my payment is failing?",
-                    "I hope we can resolve this soon. Do you know what is causing the payment to fail?",
-                    "I'm slightly concerned as the payment still isn't going through. Any advice?"
+                2: [
+                    "Hello, my card was charged $29.99 but my account is still showing inactive. Could you check why?",
+                    "I'm a little concerned that I was billed twice or that the payment didn't go through properly.",
+                    "Could you please verify if my payment went through? I don't want any service disruption.",
+                    "I received a payment declined notice, but my bank says the charge cleared. Can you clarify?",
+                    "I'm worried about being charged incorrectly. Could you please review my recent transaction?",
+                    "Could you confirm when my Premium Plan will be activated after this payment?",
+                    "I just want to ensure my account is safe and the billing is correct. Any updates?",
+                    "Can you please check the transaction logs on your end for card ending in 4242?"
                 ],
-
-                "frustrated": [
-                    "I'm getting frustrated because the payment still is not working. Can you fix this?",
-                    "This payment problem is becoming frustrating. I need a clear solution.",
-                    "I have tried to complete the payment and it still fails. What should I do?",
-                    "The payment keeps failing and it's frustrating. Please give me a concrete solution.",
-                    "I need this payment issue resolved. Waiting without a clear fix is not helpful."
+                3: [
+                    "I'm getting frustrated because I was charged $29.99 but I still cannot use the service. Fix this please.",
+                    "My payment went through on my bank statement, but your system says failed. I need a clear resolution.",
+                    "I need this payment glitch resolved today. I cannot keep waiting while my service is locked.",
+                    "Why was my card billed if the subscription isn't active? Please give me a concrete explanation.",
+                    "I've tried multiple times and it keeps failing. What is your team doing to fix my account billing?",
+                    "I need a definitive answer on whether my payment was received or if I was overcharged.",
+                    "Waiting without access while you have my money is frustrating. Please resolve this now.",
+                    "Please look into my billing records and activate my account immediately."
                 ],
-
-                "angry": [
-                    "This payment failure is unacceptable. I need it fixed now.",
-                    "I'm very unhappy with this payment problem. Give me a clear solution immediately.",
-                    "I cannot keep dealing with a failed payment. Please resolve it now.",
-                    "I expect this payment issue to be fixed immediately. The delay is unacceptable.",
-                    "Stop the delays. Fix the payment problem right now."
+                4: [
+                    "This payment issue is unacceptable. You took my money and locked me out of the service!",
+                    "I have proof of charge from my bank. Activate my account immediately or refund the charge right now!",
+                    "I am tired of dealing with this failed payment error. Fix my account access now without delays!",
+                    "You've charged my card and given me nothing in return. I demand immediate activation or refund!",
+                    "Stop giving me automated excuses. Resolve this billing error right now!",
+                    "I shouldn't have to fight to use a service I already paid for. Fix this immediately!",
+                    "I demand a supervisor or billing specialist right now to fix this payment error!",
+                    "Fix this payment error immediately. This is completely unacceptable service!"
                 ],
-
-                "furious": [
-                    "This payment issue is completely unacceptable. Fix it immediately.",
-                    "I am extremely frustrated with this failed payment. Resolve it now.",
-                    "Enough. I need this payment problem fixed immediately.",
-                    "This is ridiculous. Resolve the payment failure right now or escalate it.",
-                    "I demand an immediate fix for this payment issue. No more delays."
+                5: [
+                    "You have charged my card without providing service! This is illegal and I demand an immediate refund or manager!",
+                    "I am furious! Refund my $29.99 immediately or fix my account NOW before I report this as fraud!",
+                    "I demand to speak to a supervisor right now! You took my money and locked my account!",
+                    "This is outrageous! Fix my payment issue instantly or I will file a credit card chargeback immediately!",
+                    "I want a manager on this line RIGHT NOW. You have wrongfully taken my money!",
+                    "Resolve this fraudulent charge and account lockout immediately or I am taking legal action!",
+                    "Transfer me to management right now! I will not tolerate this billing malpractice!",
+                    "Refund my money immediately! I am escalating this to payment regulators and your executive team!"
                 ]
             },
-
-
             "account_issue": {
-
-                "calm": [
-                    "Hi, I cannot access my account. Could you please help me restore access?",
-                    "Hello, I am having trouble logging into my account. Can you please help?",
-                    "Could you please check why I cannot access my account?",
-                    "Thank you. Is there any information you need from me to restore access?",
-                    "I’d appreciate your help in getting my account access restored.",
-                    "Just checking in — has there been any update on restoring my account access?"
+                1: [
+                    "Hi, I seem to be having trouble logging into my account. Could you please help me restore access?",
+                    "Hello! My password reset link expired. Could you kindly help me unlock my account?",
+                    "Thank you for helping me with my account login. I appreciate your guidance.",
+                    "Thank you so much! I appreciate your quick help in recovering my login.",
+                    "That worked great, thank you for guiding me through the reset steps.",
+                    "I really appreciate you helping me get back into my account so politely.",
+                    "Thank you for confirming my account status. Everything is clear now.",
+                    "Thank you for the prompt and friendly assistance with my account!"
                 ],
-
-                "concerned": [
-                    "I'm concerned because I still cannot access my account. Could you please check this?",
-                    "I'm worried about being locked out of my account. Can you help restore access?",
-                    "Could you please explain what is preventing me from accessing my account?",
-                    "I hope this can be resolved soon. Do you know why I can't log in?",
-                    "I'm slightly worried as I still can't access my account. Any update?"
+                2: [
+                    "Hello, my account is locked after 3 attempts and I really need to access my files. Can you help?",
+                    "I'm concerned because my subscription is showing Free instead of Premium after the login error.",
+                    "Could you please check why my reset email isn't arriving? I've checked my spam folder.",
+                    "I'm a bit worried about my account security. Could you confirm my profile details are intact?",
+                    "I hope my data is safe. Could you please send a fresh unlock link to my email?",
+                    "Could you verify why I'm getting an 'access denied' message on my browser?",
+                    "I just want to regain access to my account without losing my settings. Any advice?",
+                    "Can you please check the account status for user.support@example.com?"
                 ],
-
-                "frustrated": [
-                    "I'm getting frustrated because I still cannot access my account. Can you fix this?",
-                    "This account access problem is becoming frustrating. I need a clear next step.",
-                    "I have been trying to access my account without success. What should I do?",
-                    "Being locked out is frustrating. Please give me a concrete solution.",
-                    "I need my account access restored. This delay is becoming annoying."
+                3: [
+                    "I'm getting frustrated because I'm still locked out of my account and I have urgent work to do.",
+                    "I need access restored immediately. Following the standard reset steps is not working.",
+                    "Why is my account still locked? Please give me a direct solution or manual unlock now.",
+                    "This lockout is stopping my work. Can you manually unlock my account from your admin panel?",
+                    "I've been waiting for a reset link for an hour. What is causing this delay?",
+                    "I need a concrete next step to regain access to my paid subscription today.",
+                    "Being locked out of my own paid account is very frustrating. Please resolve this.",
+                    "Please look into this account lock and unlock it for me right now."
                 ],
-
-                "angry": [
-                    "This account access problem is unacceptable. I need access restored now.",
-                    "I'm very unhappy that I am still locked out. Give me a clear solution immediately.",
-                    "I cannot keep waiting to access my account. Please resolve this now.",
-                    "I expect my account access to be restored immediately. This is unacceptable.",
-                    "Stop delaying. Restore my account access right now."
+                4: [
+                    "This account lockout is completely unacceptable! I pay for this service and I can't even log in!",
+                    "I need my account unlocked right now. Stop sending automated links that don't work!",
+                    "I have urgent deadlines and your system has locked me out. Restore my access immediately!",
+                    "This is ridiculous. Manually reset my credentials or let me speak with technical support now!",
+                    "I am extremely unhappy with this support experience. Fix my login access immediately!",
+                    "Why can't your team unlock my account? I need access restored this very minute!",
+                    "I demand immediate technical escalation. I cannot afford to be locked out any longer!",
+                    "Fix my account right now! I've lost hours of productivity because of this!"
                 ],
-
-                "furious": [
-                    "This is completely unacceptable. I need my account access restored immediately.",
-                    "I am extremely frustrated with being locked out. Fix this now.",
-                    "Enough. I need access to my account restored immediately.",
-                    "This situation is ridiculous. Restore my access now or escalate the issue.",
-                    "I demand immediate restoration of my account access. No more delays."
+                5: [
+                    "I demand immediate restoration of my account right now! Transfer me to a supervisor immediately!",
+                    "I am furious! You have locked me out of my paid data and work. Unlock my account NOW!",
+                    "This is completely unacceptable! Connect me to management or tier 2 support this second!",
+                    "I am losing business every minute I am locked out. Fix this immediately or face legal escalation!",
+                    "I want a manager on this chat RIGHT NOW. Restore my access immediately without any more excuses!",
+                    "Unlock my account instantly! I refuse to deal with this gross incompetence any longer!",
+                    "Transfer me to a supervisor right now! I will not accept being locked out of what I paid for!",
+                    "Resolve this lockout immediately or I am taking this issue directly to executive leadership!"
                 ]
             },
-
-
             "cancellation": {
-
-                "calm": [
-                    "Hi, I would like to cancel my subscription. Could you please help me?",
-                    "Hello, I want to cancel my subscription. Can you guide me through the process?",
-                    "Could you please confirm when my subscription cancellation will take effect?",
-                    "Thank you. Is there anything else I need to do to complete the cancellation?",
-                    "I’d appreciate confirmation once the cancellation has been processed.",
-                    "Just following up — has my subscription cancellation been confirmed yet?"
+                1: [
+                    "Hi, I would like to request cancellation of my annual subscription. Could you kindly assist me?",
+                    "Hello! I want to confirm the cancellation process for my account when you have a moment.",
+                    "Thank you for helping me process the cancellation. I appreciate your support.",
+                    "Thank you for confirming the cancellation details so clearly.",
+                    "That's very helpful, thank you for guiding me through the cancellation steps.",
+                    "I appreciate you handling my cancellation request with such courtesy.",
+                    "Thank you for confirming there won't be further charges on my card.",
+                    "Thank you so much for the smooth and professional cancellation assistance!"
                 ],
-
-                "concerned": [
-                    "I'm a little concerned about future charges. Could you please confirm the cancellation?",
-                    "I want to cancel my subscription, but I need to know whether there will be more charges.",
-                    "Could you please explain what happens after I request cancellation?",
-                    "I hope there won't be any further charges. Can you confirm the cancellation status?",
-                    "I'm slightly worried about ongoing billing. Has the cancellation been completed?"
+                2: [
+                    "Hello, I requested a cancellation and want to make sure auto-renew is definitely stopped.",
+                    "I'm a little concerned about being billed again next billing cycle. Can you confirm the cutoff date?",
+                    "Could you please explain if I'm eligible for a prorated refund for the remaining months?",
+                    "I just want to be sure there won't be any surprise renewal charges on my card. Can you check?",
+                    "Could you send me an official cancellation confirmation receipt to my email?",
+                    "I'm slightly worried my request hasn't gone through. Could you verify the cancellation status?",
+                    "Can you confirm what happens to my stored data once the cancellation takes effect?",
+                    "Just following up to ensure the auto-billing is completely disabled on my account."
                 ],
-
-                "frustrated": [
-                    "I'm getting frustrated because I still need confirmation that my subscription is cancelled.",
-                    "I need this cancellation handled properly. Please give me a clear confirmation.",
-                    "I'm tired of dealing with this. Please confirm exactly when the subscription will be cancelled.",
-                    "Waiting for confirmation is frustrating. Please finalize the cancellation now.",
-                    "I need a clear confirmation that the subscription has been cancelled. This is taking too long."
+                3: [
+                    "I'm getting frustrated because I asked to cancel and I haven't received confirmation yet.",
+                    "I want my subscription cancelled today without being pushed to stay. Please confirm it.",
+                    "Please stop giving me retention offers and just confirm that my subscription is cancelled.",
+                    "I need a clear written confirmation that my card will not be charged again.",
+                    "Why is it so hard to simply cancel a subscription? Finalize the cancellation now please.",
+                    "I need a definitive answer that my account will not auto-renew. Please confirm immediately.",
+                    "Waiting for a simple cancellation confirmation is frustrating. Please process it now.",
+                    "Please execute the cancellation and confirm the final date today."
                 ],
-
-                "angry": [
-                    "I want my subscription cancelled immediately. I need clear confirmation now.",
-                    "This cancellation issue is unacceptable. Stop the subscription and confirm it.",
-                    "I'm very unhappy with this delay. Complete the cancellation now.",
-                    "I expect the cancellation to be completed immediately. No more delays.",
-                    "Cancel the subscription right now and give me confirmation."
+                4: [
+                    "Cancel my subscription immediately! I do not want any sales pitches or delays!",
+                    "I demand immediate cancellation and confirmation. Stop trying to keep me subscribed!",
+                    "This cancellation process is unacceptable. Turn off auto-renew and cancel my account right now!",
+                    "If you charge my card again after this request, I will dispute it as unauthorized. Cancel it now!",
+                    "I have asked repeatedly to cancel. Do it immediately and send me proof!",
+                    "I'm not interested in discounts. Process my cancellation this second!",
+                    "I demand a confirmation number for my cancellation right now. No more delays!",
+                    "Cancel my plan immediately! I have had enough of this runaround!"
                 ],
-
-                "furious": [
-                    "Cancel the subscription immediately. This delay is completely unacceptable.",
-                    "Enough delays. I want the subscription cancelled now.",
-                    "This is unacceptable. Cancel it immediately or escalate the issue.",
-                    "I demand that the subscription be cancelled right now. This is ridiculous.",
-                    "Stop delaying and cancel my subscription immediately."
+                5: [
+                    "Cancel my subscription RIGHT NOW! If I see one more charge, I am filing a fraud complaint!",
+                    "I demand an immediate cancellation confirmation and a supervisor on this line right now!",
+                    "This is completely unacceptable! Cancel my plan instantly or I am reporting this to consumer protection!",
+                    "Stop holding my billing hostage! Cancel my subscription immediately and transfer me to a manager!",
+                    "I am furious! Cancel my account right now and confirm the billing termination immediately!",
+                    "I will not tolerate another second of being billed. Cancel everything immediately or face legal action!",
+                    "Transfer me to a manager right now! I demand instant cancellation of my subscription!",
+                    "Cancel my subscription this instant! I am done with your deceptive cancellation tactics!"
                 ]
             }
         }
 
-        options = message_sets[
-            self.scenario_name
-        ][band]
+        # Select candidate list for the scenario and current frustration level
+        scenario_pool = message_catalog.get(self.scenario_name, message_catalog["refund_request"])
+        candidates = scenario_pool.get(level, scenario_pool[3])
 
-        # Turn-based variation
-        index = self.turn_count % len(options)
+        # Pick an unused base message
+        chosen_base = None
+        for msg in candidates:
+            if msg not in self.used_messages:
+                chosen_base = msg
+                break
 
-        message = options[index]
+        if not chosen_base:
+            # Generate dynamically unique message using turn counter
+            idx = self.turn_count % len(candidates)
+            chosen_base = f"{candidates[idx]} (Follow-up {self.turn_count + 1})"
 
-        # ------------------------------------------------------
-        # PERSONA MODIFICATION
-        # Subtle tone adaptation matching persona communication style
-        # ------------------------------------------------------
-        if self.persona_name == "polite" and band in ["angry", "furious"]:
-            message = "I am very disappointed with this situation. " + message
-        elif self.persona_name == "concerned" and band in ["angry", "furious"]:
-            message = "I'm quite worried about this situation. " + message
+        self.used_messages.add(chosen_base)
 
-        # ------------------------------------------------------
-        # ABSOLUTE NO-REPEAT PROTECTION
-        # ------------------------------------------------------
+        # Apply persona prefix
+        if not opening:
+            if level == 1:
+                prefix = persona.get("prefix_calm", "")
+            elif level <= 3:
+                prefix = persona.get("prefix_frustrated", "")
+            else:
+                prefix = persona.get("prefix_angry", "")
 
-        if message in self.used_messages:
+            if prefix and not chosen_base.startswith(prefix.strip()[:10]):
+                chosen_message = prefix + chosen_base
+            else:
+                chosen_message = chosen_base
+        else:
+            chosen_message = chosen_base
 
-            for candidate in options:
-
-                if candidate not in self.used_messages:
-
-                    message = candidate
-                    break
-
-        self.used_messages.add(message)
-
-        return message
-
+        self.used_messages.add(chosen_message)
+        return chosen_message
 
     # ==========================================================
     # CLOSING MESSAGE
     # ==========================================================
-
-    def _closing_message(self):
-
-        if self.frustration_level <= 2:
-            return (
-                "Thank you for resolving this. "
-                "I really appreciate your help."
-            )
-
-        if self.frustration_level <= 4:
-            return (
-                "Alright, thank you for the update. "
-                "I appreciate you getting this sorted out."
-            )
-
-        if self.frustration_level <= 6:
-            return (
-                "Okay, I will accept that for now. "
-                "Please make sure the promised action is completed."
-            )
-
-        if self.frustration_level <= 8:
-            return (
-                "Fine, but I need to see the promised action completed. "
-                "I hope there are no more delays."
-            )
-
-        return (
-            "I still expect this to be fixed immediately. "
-            "If it is not, I will need to escalate the issue."
-        )
-
+    def _closing_message(self) -> str:
+        if self.frustration_level == 1:
+            return "Thank you so much for resolving this completely! I really appreciate your excellent and prompt help."
+        elif self.frustration_level == 2:
+            return "Alright, thank you for the update and getting this sorted out for me. I appreciate your assistance."
+        elif self.frustration_level == 3:
+            return "Okay, I will accept this resolution for now. Please make sure the promised action is completed on time."
+        elif self.frustration_level == 4:
+            return "Fine, but I expect the promised resolution to be completed without any further delay."
+        else:
+            return "I will accept this only if it is completed immediately as promised. If not, I am escalating directly to management."
 
     # ==========================================================
-    # RECORD
+    # RECORD HISTORY
     # ==========================================================
-
-    def _record(
-        self,
-        role: str,
-        content: str
-    ):
-
+    def _record(self, role: str, content: str):
         self.turn_count += 1
-
         self.history.append({
             "role": role,
             "content": content,
-            "frustration_level": (
-                self.frustration_level
-                if role == "customer"
-                else None
-            ),
-            "emotion": (
-                get_emotion(self.frustration_level)
-                if role == "customer"
-                else None
-            )
+            "frustration_level": self.frustration_level if role == "customer" else None,
+            "frustration_text": f"Frustration: {self.frustration_level}/5" if role == "customer" else None,
+            "emotion": get_emotion(self.frustration_level) if role == "customer" else None
         })
-
         self._save_log()
 
-
     # ==========================================================
-    # API RESPONSE
+    # BUILD RESPONSE
     # ==========================================================
-
-    def _build_response(
-        self,
-        message: str,
-        extra: Optional[Dict[str, Any]] = None
-    ):
-
+    def _build_response(self, message: str, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        emotion_label = get_emotion(self.frustration_level)
         data = {
             "session_id": self.session_id,
-
             "customer_message": message,
-
-            "persona": self.persona_name,
-
-            "persona_name": PERSONAS[
-                self.persona_name
-            ]["name"],
-
-            "scenario": self.scenario_name,
-
-            "scenario_name": SCENARIOS[
-                self.scenario_name
-            ]["name"],
-
-            "frustration_level":
-                self.frustration_level,
-
+            "frustration_level": self.frustration_level,
+            "frustration_text": f"Frustration: {self.frustration_level}/5",
             "emotion": {
-                "label":
-                    get_emotion(
-                        self.frustration_level
-                    ),
-
-                "intensity":
-                    self.frustration_level
+                "label": emotion_label,
+                "intensity": self.frustration_level,
+                "level": self.frustration_level,
+                "scale": "1-5",
+                "emotion": emotion_label
             },
-
+            "persona": self.persona_name,
+            "persona_name": PERSONAS.get(self.persona_name, {}).get("name", self.persona_name),
+            "scenario": self.scenario_name,
+            "scenario_name": SCENARIOS.get(self.scenario_name, {}).get("name", self.scenario_name),
             "finished": self.finished,
-
-            "turn_count":
-                self.turn_count,
-
-            "history":
-                self.history,
-
-            "log_path":
-                str(self.log_path)
+            "turn_count": self.turn_count,
+            "history": self.history,
+            "log_path": str(self.log_path)
         }
-
         if extra:
             data.update(extra)
-
         return data
 
-
     # ==========================================================
-    # STATE
+    # GET STATE
     # ==========================================================
-
-    def get_state(self):
-
-        return self._build_response(
-            ""
-        )
-
+    def get_state(self) -> Dict[str, Any]:
+        return self._build_response("")
 
     # ==========================================================
     # SAVE LOG
     # ==========================================================
-
     def _save_log(self):
-
         try:
-
             data = {
-                "session_id":
-                    self.session_id,
-
-                "persona":
-                    self.persona_name,
-
-                "scenario":
-                    self.scenario_name,
-
-                "frustration_level":
-                    self.frustration_level,
-
-                "history":
-                    self.history
+                "session_id": self.session_id,
+                "persona": self.persona_name,
+                "scenario": self.scenario_name,
+                "frustration_level": self.frustration_level,
+                "frustration_text": f"Frustration: {self.frustration_level}/5",
+                "emotion": get_emotion(self.frustration_level),
+                "history": self.history,
+                "turn_count": self.turn_count,
+                "finished": self.finished
             }
-
-            self.log_path.write_text(
-                json.dumps(
-                    data,
-                    indent=2
-                ),
-                encoding="utf-8"
-            )
-
+            self.log_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
         except Exception:
             pass
 
 
-# ==============================================================
-# FACTORY
-# ==============================================================
-
-def create_simulator(**kwargs):
-
+def create_simulator(**kwargs) -> CustomerSimulator:
     return CustomerSimulator(**kwargs)

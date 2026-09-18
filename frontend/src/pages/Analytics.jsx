@@ -100,15 +100,15 @@ function Analytics() {
       : "0.0";
 
   const getPerformanceLabel = (frustration) => {
-    if (frustration <= 3) {
+    if (frustration <= 1.5) {
       return "Excellent";
     }
 
-    if (frustration <= 5) {
+    if (frustration <= 2.5) {
       return "Good";
     }
 
-    if (frustration <= 7) {
+    if (frustration <= 3.5) {
       return "Needs Improvement";
     }
 
@@ -160,7 +160,7 @@ function Analytics() {
           <div className="analytics-stat-card">
             <span>Avg. Frustration</span>
             <strong>
-              {averageFrustration}/10
+              {averageFrustration}/5
             </strong>
             <small>
               Final customer frustration

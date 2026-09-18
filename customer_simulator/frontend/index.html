@@ -368,14 +368,14 @@ button {
                 <div>
                     <label>
                         Customer Frustration Level:
-                        <span id="levelText">5/10</span>
+                        <span id="levelText">3/5</span>
                     </label>
-                    <input type="range" id="frustration" min="1" max="10" value="5">
+                    <input type="range" id="frustration" min="1" max="5" value="3">
 
                     <div class="levelBox">
-                        <div class="levelTitle" id="emotionText">😤 Frustrated</div>
+                        <div class="levelTitle" id="emotionText">😤 Moderately Frustrated</div>
                         <div class="levelDescription" id="levelDescription">
-                            The customer is noticeably dissatisfied and wants a concrete answer.
+                            The customer is moderately frustrated and expects a concrete answer.
                         </div>
                     </div>
                 </div>
@@ -439,9 +439,9 @@ button {
 
                         <label style="margin-top:15px;">
                             Frustration Level for Next Customer Reply:
-                            <span id="replyLevel">5/10</span>
+                            <span id="replyLevel">3/5</span>
                         </label>
-                        <input type="range" id="replyFrustration" min="1" max="10" value="5">
+                        <input type="range" id="replyFrustration" min="1" max="5" value="3">
 
                         <button class="sendBtn" onclick="sendReply()">
                             💬 Send Reply & Get Customer Response
@@ -541,24 +541,24 @@ const replyFrustration = document.getElementById("replyFrustration");
 const replyLevel = document.getElementById("replyLevel");
 
 function emotion(level) {
-    if (level <= 2) return "Calm";
-    if (level <= 4) return "Concerned";
-    if (level <= 6) return "Frustrated";
-    if (level <= 8) return "Angry";
-    return "Furious";
+    if (level <= 1) return "Very calm / Satisfied";
+    if (level <= 2) return "Slightly concerned";
+    if (level <= 3) return "Moderately frustrated";
+    if (level <= 4) return "Highly frustrated";
+    return "Extremely angry / About to escalate";
 }
 
 function description(level) {
-    if (level <= 2) return "The customer is calm and polite.";
-    if (level <= 4) return "The customer is concerned and wants clarification.";
-    if (level <= 6) return "The customer is frustrated and wants a concrete answer.";
-    if (level <= 8) return "The customer is angry, direct and demanding.";
-    return "The customer is extremely frustrated and wants immediate action.";
+    if (level <= 1) return "The customer is very calm, polite, satisfied and cooperative.";
+    if (level <= 2) return "The customer is slightly concerned and seeks clarification.";
+    if (level <= 3) return "The customer is moderately frustrated and expects a concrete answer.";
+    if (level <= 4) return "The customer is highly frustrated, sharp, direct and impatient.";
+    return "The customer is extremely angry, demanding immediate escalation or supervisor.";
 }
 
 function updateLevelUI() {
     const level = Number(frustration.value);
-    levelText.textContent = level + "/10";
+    levelText.textContent = level + "/5";
     emotionText.textContent = "🔥 " + emotion(level);
     levelDescription.textContent = description(level);
 }
@@ -566,7 +566,7 @@ function updateLevelUI() {
 frustration.addEventListener("input", updateLevelUI);
 
 replyFrustration.addEventListener("input", function () {
-    replyLevel.textContent = replyFrustration.value + "/10";
+    replyLevel.textContent = replyFrustration.value + "/5";
 });
 
 updateLevelUI();
@@ -639,7 +639,7 @@ async function startSimulation() {
         document.getElementById("activePersona").textContent = data.persona_name;
         document.getElementById("activeScenario").textContent = data.scenario_name;
         document.getElementById("activeEmotion").textContent = data.emotion.label;
-        document.getElementById("activeLevel").textContent = data.frustration_level + "/10";
+        document.getElementById("activeLevel").textContent = data.frustration_level + "/5";
 
         document.getElementById("copilotPersona").textContent = data.persona_name;
         document.getElementById("copilotScenario").textContent = data.scenario_name;
@@ -652,7 +652,7 @@ async function startSimulation() {
         document.getElementById("message").textContent = "✅ Simulation started successfully!";
 
         replyFrustration.value = data.frustration_level;
-        replyLevel.textContent = data.frustration_level + "/10";
+        replyLevel.textContent = data.frustration_level + "/5";
 
     } catch (error) {
         alert("Failed to start simulation:\n\n" + error.message);
@@ -697,14 +697,14 @@ async function sendReply() {
         }
 
         frustration.value = data.frustration_level;
-        levelText.textContent = data.frustration_level + "/10";
+        levelText.textContent = data.frustration_level + "/5";
         replyFrustration.value = data.frustration_level;
-        replyLevel.textContent = data.frustration_level + "/10";
+        replyLevel.textContent = data.frustration_level + "/5";
 
         updateLevelUI();
 
         document.getElementById("activeEmotion").textContent = data.emotion.label;
-        document.getElementById("activeLevel").textContent = data.frustration_level + "/10";
+        document.getElementById("activeLevel").textContent = data.frustration_level + "/5";
 
         addCustomerMessage(data.customer_message, data.emotion.label, data.frustration_level);
         updateCopilot(data);
@@ -726,7 +726,7 @@ function addCustomerMessage(text, emotion, level) {
     div.innerHTML = `
         <div class="messageHeader">
             👤 Customer
-            <span class="badge">${emotion} · ${level}/10</span>
+            <span class="badge">${emotion} · Frustration: ${level}/5</span>
         </div>
         <div>${escapeHtml(text)}</div>
     `;
@@ -753,16 +753,19 @@ function updateCopilot(data) {
     document.getElementById("copilotPersona").textContent = data.persona_name;
     document.getElementById("copilotScenario").textContent = data.scenario_name;
     document.getElementById("copilotEmotion").textContent = data.emotion.label;
-    document.getElementById("copilotLevel").textContent = data.frustration_level + "/10";
+    document.getElementById("copilotLevel").textContent = data.frustration_level + "/5";
 
     let tips = [];
 
-    if (data.frustration_level >= 7) {
-        tips.push("Acknowledge the customer's frustration first.");
-        tips.push("Use a clear and direct response.");
+    if (data.frustration_level >= 4) {
+        tips.push("Acknowledge the customer's frustration immediately and offer ownership.");
+        tips.push("Use clear, direct commitments with concrete timelines.");
+    } else if (data.frustration_level >= 3) {
+        tips.push("Provide a specific next step and reassure the customer.");
+        tips.push("Avoid generic or vague delays.");
     } else {
-        tips.push("Maintain a respectful tone.");
-        tips.push("Give a clear next step.");
+        tips.push("Maintain a warm, cooperative and respectful tone.");
+        tips.push("Confirm that all questions are completely answered.");
     }
 
     tips.push("Match your response to the customer's current emotional intensity.");
@@ -823,7 +826,7 @@ async function analyzeConversation() {
 
                 <div class="copilotBox">
                     <h4>❤️ Overall Customer Emotion</h4>
-                    <p><strong>${escapeHtml(data.emotion || data.overall_emotion || "Unknown")}</strong> (Frustration: ${data.frustration_level || data.frustration_score || "N/A"}/10)</p>
+                    <p><strong>${escapeHtml(data.emotion || data.overall_emotion || "Unknown")}</strong> (Frustration: ${data.frustration_level || data.frustration_score || "N/A"}/5)</p>
                 </div>
 
                 <div class="copilotBox">

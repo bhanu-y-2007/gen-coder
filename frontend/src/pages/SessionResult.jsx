@@ -243,7 +243,7 @@ function SessionResult() {
               <span>Final Intensity</span>
 
               <strong>
-                {frustrationLevel} / 10
+                {frustrationLevel} / 5
               </strong>
             </div>
 
@@ -251,7 +251,7 @@ function SessionResult() {
               <span>Frustration Level</span>
 
               <strong>
-                {frustrationLevel} / 10
+                {frustrationLevel} / 5
               </strong>
             </div>
 

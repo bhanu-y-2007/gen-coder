@@ -50,23 +50,62 @@ app.add_middleware(
 SESSIONS: Dict[str, CustomerSimulator] = {}
 
 # ==========================================================
-# REQUEST MODELS
+# REQUEST MODELS (1 to 5 Frustration Scale)
 # ==========================================================
 class SessionRequest(BaseModel):
     persona: str = "frustrated"
     scenario: str = "refund_request"
-    frustration_level: int = Field(default=5, ge=1, le=10)
+    frustration_level: int = Field(default=3, ge=1, le=5)
     expected_resolution: str = "full_refund"
+
+    @model_validator(mode="before")
+    def clamp_frustration(cls, values):
+        if isinstance(values, dict) and "frustration_level" in values:
+            try:
+                val = int(values["frustration_level"])
+                if val > 5:
+                    values["frustration_level"] = max(1, min(5, round(val / 2)))
+                else:
+                    values["frustration_level"] = max(1, min(5, val))
+            except Exception:
+                values["frustration_level"] = 3
+        return values
 
 
 class AgentMessageRequest(BaseModel):
     session_id: str
     message: str = Field(..., min_length=1)
-    frustration_level: Optional[int] = Field(default=None, ge=1, le=10)
+    frustration_level: Optional[int] = Field(default=None, ge=1, le=5)
+
+    @model_validator(mode="before")
+    def clamp_frustration(cls, values):
+        if isinstance(values, dict) and values.get("frustration_level") is not None:
+            try:
+                val = int(values["frustration_level"])
+                if val > 5:
+                    values["frustration_level"] = max(1, min(5, round(val / 2)))
+                else:
+                    values["frustration_level"] = max(1, min(5, val))
+            except Exception:
+                values["frustration_level"] = None
+        return values
 
 
 class FrustrationRequest(BaseModel):
-    frustration_level: int = Field(..., ge=1, le=10)
+    frustration_level: int = Field(..., ge=1, le=5)
+
+    @model_validator(mode="before")
+    def clamp_frustration(cls, values):
+        if isinstance(values, dict) and "frustration_level" in values:
+            try:
+                val = int(values["frustration_level"])
+                if val > 5:
+                    values["frustration_level"] = max(1, min(5, round(val / 2)))
+                else:
+                    values["frustration_level"] = max(1, min(5, val))
+            except Exception:
+                values["frustration_level"] = 3
+        return values
 
 
 class AnalyzeRequest(BaseModel):
@@ -155,7 +194,7 @@ def options():
             }
             for key, value in SCENARIOS.items()
         ],
-        "frustration_levels": list(range(1, 11)),
+        "frustration_levels": [1, 2, 3, 4, 5],
         "resolutions": [
             "full_refund",
             "partial_refund",
@@ -439,27 +478,42 @@ def analyze(req: AnalyzeRequest):
         intent = "general_inquiry"
 
     # ------------------------------------------------------
-    # FRUSTRATION / EMOTION
+    # FRUSTRATION / EMOTION (1 to 5 scale)
+    # 1 = Very calm / Satisfied
+    # 2 = Slightly concerned
+    # 3 = Moderately frustrated
+    # 4 = Highly frustrated
+    # 5 = Extremely angry / About to escalate
     # ------------------------------------------------------
     if any(w in text_lower for w in [
-        "furious", "unacceptable", "ridiculous", "manager",
-        "worst", "immediately", "urgent", "urgently", "this is ridiculous"
+        "furious", "unacceptable", "ridiculous", "manager", "supervisor",
+        "worst", "dispute", "lawyer", "legal", "fraud", "scam", "this is ridiculous"
     ]):
-        score = 9
-        emotion = "Furious"
-    elif any(w in text_lower for w in [
-        "angry", "frustrated", "upset", "annoyed", "not happy"
-    ]):
-        score = 7
-        emotion = "Angry"
-    elif any(w in text_lower for w in ["please", "thank", "appreciate", "thanks"]):
-        score = 3
-        emotion = "Calm"
-    else:
         score = 5
-        emotion = "Frustrated"
+        emotion = "Extremely angry / About to escalate"
+    elif any(w in text_lower for w in [
+        "angry", "unacceptable", "immediately", "urgent", "urgently", "demand", "enough"
+    ]):
+        score = 4
+        emotion = "Highly frustrated"
+    elif any(w in text_lower for w in [
+        "frustrated", "delay", "taking too long", "annoyed", "not happy", "waiting"
+    ]):
+        score = 3
+        emotion = "Moderately frustrated"
+    elif any(w in text_lower for w in [
+        "concerned", "worried", "confused", "wondering", "verify", "check"
+    ]):
+        score = 2
+        emotion = "Slightly concerned"
+    elif any(w in text_lower for w in ["please", "thank", "appreciate", "thanks", "great", "glad"]):
+        score = 1
+        emotion = "Very calm / Satisfied"
+    else:
+        score = 3
+        emotion = "Moderately frustrated"
 
-    risk = "High" if score >= 8 else "Medium" if score >= 6 else "Low"
+    risk = "High" if score >= 4 else "Medium" if score == 3 else "Low"
 
     # ------------------------------------------------------
     # WHAT THE AGENT DID WELL
