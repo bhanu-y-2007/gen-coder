@@ -21,20 +21,36 @@ from typing import Dict, List, Optional
 # embedding model / FAISS index. Honour it here: retrieval simply returns
 # [] and status reports unavailable. The general pipeline keeps working.
 
+# ---------------------------------------------------------------------------
+# Resolve sibling flat imports (analysis_core, support_assist,
+# knowledge_bridge) regardless of how this module is loaded
+# (e.g. `uvicorn task6_support_assist.support_api:app` puts the
+# *package* on sys.path, not the package directory, so a bare
+# `from analysis_core import ...` fails with ModuleNotFoundError).
+# Adding this module's own directory makes the flat imports work
+# in every invocation style without duplicating any files.
+# ---------------------------------------------------------------------------
+import os as _os
+import sys as _sys
+from pathlib import Path as _Path
+
+_MODULE_DIR = _Path(__file__).resolve().parent
+if str(_MODULE_DIR) not in _sys.path:
+    _sys.path.insert(0, str(_MODULE_DIR))
+
 RAG_DIR = Path(__file__).resolve().parent.parent / "rag"
+
 
 # Global lazy-initialisation state
 _lock = threading.Lock()
 _search_fn = None
 _init_error: Optional[str] = None
 
-
 def _rag_disabled() -> bool:
     """Skip heavy RAG imports in test / lightweight environments."""
     import os
 
     return os.getenv("TASK6_NO_RAG", "") not in ("", "0", "false", "False")
-
 
 def _get_search_fn():
     """
@@ -100,13 +116,11 @@ def _get_search_fn():
 
         return _search_fn
 
-
 def knowledge_available() -> bool:
     """Return True when the RAG retriever could be loaded."""
     if os.environ.get("TASK6_NO_RAG") == "1":
         return False
     return _get_search_fn() is not None
-
 
 def knowledge_status() -> Dict:
     """Return a small diagnostic payload about the knowledge agent."""
@@ -122,7 +136,6 @@ def knowledge_status() -> Dict:
         "error": _init_error,
         "source": str(RAG_DIR),
     }
-
 
 # ==========================================================
 # KNOWLEDGE RETRIEVAL — INTENT -> ALLOWED DOCUMENT MAP
@@ -167,11 +180,9 @@ _INTENT_SOURCE_KEYWORDS: Dict[str, List[str]] = {
     "general_inquiry": [],
 }
 
-
 def _allowed_sources_for_intent(intent: str) -> List[str]:
     """Return the intent-specific source keywords for ``intent``."""
     return _INTENT_SOURCE_KEYWORDS.get(intent, [])
-
 
 # ==========================================================
 # KNOWLEDGE RETRIEVAL — INTENT -> CHUNK CONTENT FILTER
@@ -246,7 +257,6 @@ _MESSAGE_WIDENING_TRIGGERS: Dict[str, List[str]] = {
     ],
 }
 
-
 def _content_keywords_for(intent: str, query: str) -> List[str]:
     """Content words a chunk must contain for this intent/query."""
     keywords = list(_INTENT_CONTENT_KEYWORDS.get(intent, []))
@@ -274,7 +284,6 @@ def _content_keywords_for(intent: str, query: str) -> List[str]:
             if kw in query_lower
         ]
     return keywords
-
 
 def search_knowledge(
     query: str,

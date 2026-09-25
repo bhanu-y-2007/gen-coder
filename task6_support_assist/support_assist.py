@@ -32,13 +32,29 @@ import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
+# ---------------------------------------------------------------------------
+# Resolve sibling flat imports (analysis_core, support_assist,
+# knowledge_bridge) regardless of how this module is loaded
+# (e.g. `uvicorn task6_support_assist.support_api:app` puts the
+# *package* on sys.path, not the package directory, so a bare
+# `from analysis_core import ...` fails with ModuleNotFoundError).
+# Adding this module's own directory makes the flat imports work
+# in every invocation style without duplicating any files.
+# ---------------------------------------------------------------------------
+import os as _os
+import sys as _sys
+from pathlib import Path as _Path
+
+_MODULE_DIR = _Path(__file__).resolve().parent
+if str(_MODULE_DIR) not in _sys.path:
+    _sys.path.insert(0, str(_MODULE_DIR))
+
 from analysis_core import (
     detect_emotion as ac_detect_emotion,
     detect_intent as ac_detect_intent,
     detect_sentiment as ac_detect_sentiment,
     emotion_label_for_level,
 )
-
 
 # ==========================================================
 # CONFIGURATION
@@ -48,7 +64,6 @@ def _env_threshold() -> int:
         return int(os.getenv("ESCALATION_ALERT_THRESHOLD", "70"))
     except (TypeError, ValueError):
         return 70
-
 
 DEFAULT_ALERT_THRESHOLD = _env_threshold()
 
@@ -145,7 +160,6 @@ _AGENT_POLITENESS_WORDS = frozenset([
 # above - `re.findall(r"[a-z']+")` drops spaces, so phrases are matched
 # against the raw text there.
 
-
 # ==========================================================
 # CUSTOMER-STATE EVIDENCE
 # ==========================================================
@@ -173,7 +187,6 @@ _NEGATION_RE = re.compile(
     r"\b(?:not|no|never|n't|isn't|wasn't|weren't|aren't|don't|doesn't|"
     r"didn't|can't|cannot|won't|nothing|none)\b"
 )
-
 
 def _has_unnegated(text_lower: str, needles) -> bool:
     """
@@ -231,15 +244,12 @@ _URGENCY_MARKERS = (
     "as soon as possible", "end of day",
 )
 
-
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
 
 def clamp_score(value: float, low: int = 0, high: int = 100) -> int:
     """Clamp a float score into an inclusive integer range."""
     return int(max(low, min(high, round(value))))
-
 
 def risk_level_for_score(score: int) -> str:
     """Map a 0-100 escalation score to Low/Medium/High/Critical."""
@@ -247,7 +257,6 @@ def risk_level_for_score(score: int) -> str:
         if score >= minimum:
             return level
     return "Low"
-
 
 # ==========================================================
 # REPEAT-PRESSURE CURVE (single source of truth)
@@ -275,7 +284,6 @@ _RAISED_BEFORE_POINTS = 6
 _RAISED_BEFORE_STEP = 3
 _RAISED_BEFORE_CAP = 20
 
-
 def repeated_complaint_points(mentions: int) -> int:
     """Repeat-pressure points for a complaint raised `mentions` times."""
     try:
@@ -289,7 +297,6 @@ def repeated_complaint_points(mentions: int) -> int:
         _REPEAT_POINTS_START + _REPEAT_POINTS_STEP * (mentions - 2),
     )
 
-
 def raised_before_points(mentions: int) -> int:
     """Repeat-pressure points for the Nth raising of the same issue."""
     try:
@@ -301,7 +308,6 @@ def raised_before_points(mentions: int) -> int:
         _RAISED_BEFORE_CAP,
         _RAISED_BEFORE_POINTS + _RAISED_BEFORE_STEP * (mentions - 3),
     )
-
 
 # ==========================================================
 # COACHING & RESPONSE SUGGESTION AGENT
@@ -857,7 +863,6 @@ class CoachingResponseAgent:
             )
 
         return tips
-
 
 # ==========================================================
 # ESCALATION RISK MONITOR AGENT
@@ -1642,7 +1647,6 @@ class EscalationRiskMonitor:
             target = max(target, 7)
         target = max(1, min(10, int(target)))
 
-
         # ---- blend with the customer's RUNNING state ----------
         previous_level = None
         if isinstance(previous_state, dict):
@@ -2425,12 +2429,3 @@ class EscalationRiskMonitor:
         state["last_result"] = result
 
         return result
-
-
-
-
-
-
-
-
-

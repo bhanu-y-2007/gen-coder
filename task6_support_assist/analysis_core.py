@@ -171,6 +171,20 @@ def detect_emotion(text_lower: str) -> Tuple[str, int]:
     # ---- map to (emotion_label, frustration 1..10) ----
     # The LABEL always comes from the shared band helper so an emotion
     # and its intensity can never disagree.
+    #
+    # COUPLING WITH SENTIMENT: a message that carries NO negative
+    # substance (no negative words, no complaint nouns with a negative
+    # modifier, no multi-word negative phrase) is a factual REQUEST -
+    # "Hello, just asking about my order." - and must therefore be
+    # labelled Calm, not Frustrated. Without this coupling the emotion
+    # label and the sentiment label can contradict each other (label
+    # "Frustrated" + sentiment "neutral"), which is exactly what made
+    # the legacy /analyze endpoint report escalation_risk="High" for a
+    # calm message.
+    negative_substance = any(
+        w in text_lower for w in NEGATIVE_WORDS
+    ) or any(phrase in text_lower for phrase in NEGATIVE_PHRASES)
+
     if escalation_demand:
         frustration = 9
     elif severe_hits:
@@ -196,6 +210,12 @@ def detect_emotion(text_lower: str) -> Tuple[str, int]:
     else:
         frustration = 3
 
+    # No negative substance -> the customer is not expressing anger,
+    # so force the label to Calm regardless of the bare complaint
+    # nouns that may have nudged the intensity up.
+    if not negative_substance:
+        frustration = 3
+
     return emotion_label_for_level(frustration), frustration
 
 
@@ -211,16 +231,22 @@ NEGATIVE_WORDS = [
     "pathetic", "poor", "ridiculous", "sad", "slow", "still",
     "terrible", "twice", "unacceptable", "unhappy", "unresolved",
     "upset", "useless", "waiting", "waste", "worst", "wrong",
-    # Complaint nouns are negative even without an adjective: the
-    # customer would not mention them if nothing were wrong.
-    "refund", "failed", "failure", "error",
-    "delay", "delayed",
     # Escalation / dissatisfaction demand signals (negative affect)
     "supervisor", "manager", "escalate", "human agent", "real person",
     "someone else", "demand", "speak to a", "talk to a",
-    # Explicit unmet-demand signals: "I need this resolved", ...
-    "need", "needs", "needed", "must", "should", "long enough",
-    "immediately", "urgent", "urgently", "asap", "right now",
+    # Intensifiers / negative modifiers: when they appear next to a
+    # complaint noun the whole phrase is negative ("very late",
+    # "still not working", "really bad"). Without a modifier a bare
+    # complaint noun ("my order", "the refund", "my account") is a
+    # factual REQUEST and must stay NEUTRAL.
+    # NOTE: "so" is deliberately NOT here - it is too ambiguous
+    # ("thank you so much" is positive, "so late" is negative) and
+    # the bare complaint nouns below already carry the negative
+    # signal when they appear unmodified.
+    "very", "really", "extremely", "too", "quite",
+    "not", "no", "never", "can't", "cant", "won't", "wont",
+    "still", "long", "bad", "wrong", "broken", "awful",
+    "terrible", "horrible", "worst", "useless", "waste",
     # Worry / eroding patience: a customer who is "concerned" or
     # "beginning to lose patience" about an unresolved issue is NOT
     # neutral - they are voicing a negative affect that must keep the
@@ -228,6 +254,32 @@ NEGATIVE_WORDS = [
     "concerned", "concerning", "worrying", "worried", "impatient",
     "unhelpful", "dissatisfied",
 ]
+
+# Complaint nouns that are ONLY negative when they appear with a
+# negative modifier / in a complaint phrase. A bare mention of them
+# ("my order", "the refund", "please check my account") is a factual
+# request and must NOT flip the polarity to negative.
+COMPLAINT_NOUNS = frozenset([
+    "refund", "failed", "failure", "error",
+    "delay", "delayed",
+    "delivery", "order", "charged", "card", "payment",
+    "login", "password", "locked", "account", "return",
+    "cancel", "unsubscribe", "stop billing",
+])
+
+# Modifiers that, when adjacent to a complaint noun, make it negative.
+# NOTE: "so" is deliberately NOT here: it is too ambiguous - "thank you
+# so much" is positive while "so late" is negative. The bare complaint
+# noun ("late", "bad", "broken") is already in NEGATIVE_WORDS, so the
+# negative signal survives without "so".
+NEGATIVE_MODIFIERS = frozenset([
+    "very", "really", "extremely", "too", "quite",
+    "not", "no", "never", "can't", "cant", "won't", "wont",
+    "still", "long", "bad", "wrong", "broken", "awful",
+    "terrible", "horrible", "worst", "useless", "waste",
+    "immediately", "urgent", "urgently", "asap", "now",
+    "right now", "long enough",
+])
 
 # Multi-word negative expressions.
 #
@@ -302,6 +354,13 @@ def detect_sentiment(text_lower: str) -> Dict:
         "right now", "long enough",
     ])
 
+    # A complaint noun ("refund", "order", "account", ...) is only
+    # negative when it is modified by a negative word ("very late",
+    # "still not", "really bad"). A bare, polite mention of it ("my
+    # order", "the refund", "please check my account") is a factual
+    # REQUEST and must stay NEUTRAL — otherwise every polite customer
+    # is permanently negative and the escalation monitor can never
+    # read a calming reply.
     for index, word in enumerate(words):
         negated = index > 0 and words[index - 1] in NEGATIONS
         demand_tail = index + 1 < len(words) and words[index + 1] in DEMAND_WORDS
@@ -316,6 +375,13 @@ def detect_sentiment(text_lower: str) -> Dict:
                 negative_hits += 1
             else:
                 positive_hits += 1
+        elif word in COMPLAINT_NOUNS:
+            # Only count the noun as negative when it is modified by a
+            # negative word in the surrounding window. Without a
+            # modifier it is a neutral factual request.
+            window = words[max(0, index - 2):index + 3]
+            if any(w in NEGATIVE_MODIFIERS for w in window):
+                negative_hits += 1
 
     # Multi-word negatives are checked against the raw text (the loop
     # above only ever sees single tokens). Each expression counts once.
@@ -336,6 +402,44 @@ def detect_sentiment(text_lower: str) -> Dict:
 
     raw_score = (positive_hits - negative_hits) / max(total_hits, 1)
     raw_score = max(-1.0, min(1.0, raw_score))
+
+    # ------------------------------------------------------------------
+    # LABEL DETERMINATION.
+    #
+    # Politeness words ("please", "thank you", "I appreciate") are a
+    # SOCIAL CONVENTION, not an expression of satisfaction. A customer
+    # who writes "I'm beginning to lose patience. I'd appreciate it if
+    # you could look into my delayed order." is polite BUT still
+    # escalating - the politeness must NOT cancel the negative signal
+    # and flip the polarity to neutral, otherwise the escalation
+    # monitor's negative-sentiment streak is silently erased while the
+    # customer is still complaining.
+    #
+    # Genuine satisfaction ("Perfect, that resolved my issue. Thank
+    # you!") has NO negative substance, so it stays positive and the
+    # monitor reads the calming reply correctly.
+    #
+    # Rule: any NEGATIVE SUBSTANCE (a negative word, a multi-word
+    # negative phrase, or a complaint noun with a negative modifier)
+    # makes the message negative, unless the customer ALSO confirms
+    # the issue is genuinely resolved. Positive politeness words never
+    # override negative substance.
+    # ------------------------------------------------------------------
+    negative_substance = negative_hits > 0
+
+    if negative_substance:
+        label = "negative"
+    elif positive_hits > 0:
+        label = "positive"
+    else:
+        label = "neutral"
+
+    # When the polarity is driven by negative substance, push the
+    # score firmly negative so downstream consumers see a clear signal.
+    if label == "negative":
+        raw_score = min(-0.5, raw_score)
+    elif label == "positive":
+        raw_score = max(0.5, raw_score)
 
     # Label thresholds: only call it positive/negative when the
     # polarity is meaningfully away from zero.

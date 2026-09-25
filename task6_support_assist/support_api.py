@@ -32,7 +32,25 @@ from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 
+# ---------------------------------------------------------------------------
+# Resolve sibling flat imports (analysis_core, support_assist,
+# knowledge_bridge) regardless of how this module is loaded
+# (e.g. `uvicorn task6_support_assist.support_api:app` puts the
+# *package* on sys.path, not the package directory, so a bare
+# `from analysis_core import ...` fails with ModuleNotFoundError).
+# Adding this module's own directory makes the flat imports work
+# in every invocation style without duplicating any files.
+# ---------------------------------------------------------------------------
+import os as _os
+import sys as _sys
+from pathlib import Path as _Path
+
+_MODULE_DIR = _Path(__file__).resolve().parent
+if str(_MODULE_DIR) not in _sys.path:
+    _sys.path.insert(0, str(_MODULE_DIR))
+
 from analysis_core import detect_intent, detect_emotion, detect_sentiment
+
 from knowledge_bridge import knowledge_status, search_knowledge
 from support_assist import (
     CoachingResponseAgent,
@@ -40,7 +58,6 @@ from support_assist import (
     clamp_score,
     risk_level_for_score,
 )
-
 
 # ==========================================================
 # TASK 6 - SUPPORT ASSISTANCE AGENTS (singletons)
@@ -54,7 +71,6 @@ ESCALATION_MONITOR = EscalationRiskMonitor()
 # Every Task 6 route is declared on this router so the Customer
 # Simulator backend can mount it with `app.include_router(router)`.
 router = APIRouter(tags=["task6-support-assist"])
-
 
 # ==========================================================
 # REQUEST MODELS
@@ -89,12 +105,10 @@ class AnalyzeRequest(BaseModel):
         self.query = str(content).strip()
         return self
 
-
 class HistoryMessage(BaseModel):
     """One previous conversation message."""
     role: str = "customer"
     content: str = ""
-
 
 class SupportAssistRequest(BaseModel):
     """
@@ -114,7 +128,6 @@ class SupportAssistRequest(BaseModel):
     # The escalation monitor ONLY ingests customer messages.
     sender: Optional[str] = "customer"
 
-
 class EvaluateResponseRequest(BaseModel):
     """Evaluate an agent's drafted response for soft skills."""
     response: str = Field(..., min_length=1)
@@ -122,11 +135,9 @@ class EvaluateResponseRequest(BaseModel):
     sentiment: Optional[str] = None
     frustration_score: Optional[int] = Field(default=None, ge=1, le=10)
 
-
 class ThresholdRequest(BaseModel):
     """Configure the high-escalation alert threshold."""
     threshold: int = Field(..., ge=0, le=100)
-
 
 # ==========================================================
 # HEALTH
@@ -139,7 +150,6 @@ def health():
         "service": "task6-support-assist",
         "knowledge_available": knowledge_status()["available"],
     }
-
 
 # ==========================================================
 # MANUAL ANALYSIS - INTENT & SENTIMENT (+ Task 6 extras)
@@ -241,20 +251,28 @@ def analyze(req: AnalyzeRequest):
         sentiment=sentiment["label"],
         frustration_score=score,
     )
+    # ------------------------------------------------------
+    # ESCALATION RISK (stateless mapping for this endpoint)
+    # ------------------------------------------------------
+    # `escalation_risk` (the legacy level label) and
+    # `escalation_level` must ALWAYS come from the SAME 0-100 band
+    # function, otherwise the legacy endpoint can report
+    # `escalation_risk="High"` with `escalation_score=90` /
+    # `escalation_level="Critical"` - three different answers for
+    # the same conversation.
+    escalation_score = clamp_score(score * 10)
+    escalation_level = risk_level_for_score(escalation_score)
+    risk = escalation_level
+
     coaching_tips = COACHING_AGENT.generate_coaching_tips(
         intent=intent,
         sentiment=sentiment["label"],
         emotion_label=emotion,
         frustration_score=score,
-        escalation_level=risk,
+        escalation_level=escalation_level,
         evaluation=response_evaluation,
         knowledge_used=suggestions["knowledge_used"],
     )
-
-    # ------------------------------------------------------
-    # ESCALATION RISK (stateless mapping for this endpoint)
-    # ------------------------------------------------------
-    escalation_score = clamp_score(score * 10)
 
     # ------------------------------------------------------
     # FINAL RESPONSE - covers all possible keys the frontend may use
@@ -316,7 +334,6 @@ def analyze(req: AnalyzeRequest):
         "query": req.query
     }
 
-
 # ==========================================================
 # SUPPORT ASSISTANCE PIPELINE
 # ==========================================================
@@ -328,7 +345,6 @@ def _session_key(session_id: Optional[str], query: str) -> str:
         query.lower()[:160].encode("utf-8")
     ).hexdigest()[:12]
     return f"adhoc-{digest}"
-
 
 @router.post("/support/analyze")
 def support_analyze(req: SupportAssistRequest):
@@ -451,7 +467,6 @@ def support_analyze(req: SupportAssistRequest):
         session_key=session_key, history=history,
     )
 
-
 def _build_support_assist_response(
     *,
     req, text, intent, emotion, frustration, sentiment,
@@ -530,7 +545,6 @@ def _build_support_assist_response(
         "suggested_scenario": req.scenario_hint or intent,
     }
 
-
 # ==========================================================
 # COACHING RESPONSE EVALUATION
 # ==========================================================
@@ -547,7 +561,6 @@ def coaching_evaluate(req: EvaluateResponseRequest):
     )
     result["intent"] = req.intent
     return result
-
 
 # ==========================================================
 # ESCALATION ALERT THRESHOLD (configurable)
@@ -566,7 +579,6 @@ def get_escalation_threshold():
         },
     }
 
-
 @router.post("/escalation/threshold")
 def set_escalation_threshold(req: ThresholdRequest):
     value = ESCALATION_MONITOR.set_threshold(req.threshold)
@@ -574,7 +586,6 @@ def set_escalation_threshold(req: ThresholdRequest):
         "status": "updated",
         "threshold": value,
     }
-
 
 # ==========================================================
 # ESCALATION MONITOR STATE
@@ -589,7 +600,6 @@ def escalation_state(session_id: str):
             detail="No escalation state found for this session."
         )
     return state
-
 
 # ==========================================================
 # STANDALONE APPLICATION
@@ -619,6 +629,5 @@ def create_app() -> FastAPI:
     )
     application.include_router(router)
     return application
-
 
 app = create_app()
