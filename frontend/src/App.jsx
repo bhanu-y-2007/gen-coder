@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import Dashboard from "./pages/Dashboard";
 import SessionConfiguration from "./pages/SessionConfiguration";
@@ -11,7 +11,12 @@ function App() {
     <BrowserRouter>
       <Routes>
 
-        <Route path="/" element={<Dashboard />} />
+        {/* Opening the project lands directly on the Task 6 Customer
+            Configuration screen (persona / scenario / initial emotion /
+            severity / patience). No manual URL or session ID typing. */}
+        <Route path="/" element={<Navigate to="/session/new" replace />} />
+
+        <Route path="/dashboard" element={<Dashboard />} />
 
         <Route
           path="/session/new"
