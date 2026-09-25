@@ -11,8 +11,9 @@ lerna-debug.log*
 node_modules
 
 # Build output
-dist
-dist-ssr
+# NOTE: the built Task 6 React UI (frontend/dist) is committed so the
+# backend can serve the working Support Console without a build step.
+# dist-ssr
 *.local
 
 # Environment variables / secrets

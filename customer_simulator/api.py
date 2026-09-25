@@ -36,8 +36,13 @@ from simulator import (
 
 BASE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
 ROOT_DIR = BASE_DIR.parent
+# The React Task 6 UI is built into `frontend/dist`. Serve THAT as the
+# root page so the browser gets the working Support Console (with the
+# escalation risk monitor, coaching panel, emotion/frustration state,
+# etc.) instead of the old static HTML page.
+REACT_DIST_DIR = ROOT_DIR / "frontend" / "dist"
 FRONTEND_DIR = BASE_DIR / "frontend"
-INDEX_PATH = FRONTEND_DIR / "index.html"
+INDEX_PATH = REACT_DIST_DIR / "index.html"
 LOG_DIR = BASE_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
@@ -108,8 +113,13 @@ class FrustrationRequest(BaseModel):
 
 
 # ==========================================================
-# FRONTEND
+# FRONTEND (React Task 6 UI)
 # ==========================================================
+# The React app is built into `frontend/dist`. The root page serves the
+# built `index.html` and the `/assets/*` bundle is served from the same
+# `dist` folder. A catch-all route is added below so the React Router's
+# client-side routes (e.g. `/session/<id>`) keep working after a browser
+# refresh instead of hitting a 404.
 @app.get("/")
 @app.get("/ui")
 @app.get("/ui/")
@@ -117,17 +127,28 @@ async def home():
     if INDEX_PATH.exists():
         return FileResponse(INDEX_PATH)
     return HTMLResponse(
-        "<h1>frontend/index.html not found</h1>",
+        "<h1>Task 6 UI not built. Run `npm run build` in the frontend folder.</h1>",
         status_code=404
     )
 
 
-if FRONTEND_DIR.exists():
+# Serve the built JS/CSS bundle from the dist folder. Mounting at
+# /assets keeps it from shadowing the API routes.
+if REACT_DIST_DIR.exists():
     app.mount(
-        "/static",
-        StaticFiles(directory=str(FRONTEND_DIR)),
-        name="static"
+        "/assets",
+        StaticFiles(directory=str(REACT_DIST_DIR / "assets")),
+        name="react-assets"
     )
+
+    # Serve root-level static files referenced by the built index.html
+    # (favicon.svg, icons.svg) without shadowing the API routes.
+    for static_name in ("favicon.svg", "icons.svg"):
+        static_path = REACT_DIST_DIR / static_name
+        if static_path.exists():
+            app.get(f"/{static_name}")(
+                lambda p=static_path: FileResponse(p)
+            )
 
 
 # ==========================================================
@@ -239,6 +260,17 @@ def update_frustration(session_id: str, req: FrustrationRequest):
 # ==========================================================
 # SESSION STATE
 # ==========================================================
+# `/session/new` is a React route (session configuration), NOT a real
+# session id. It must serve the SPA, so it is registered BEFORE the
+# `/session/{session_id}` route below (which would otherwise capture
+# "new" as a session id and 404).
+@app.get("/session/new")
+async def session_new():
+    if INDEX_PATH.exists():
+        return FileResponse(INDEX_PATH)
+    raise HTTPException(status_code=404, detail="Not found")
+
+
 @app.get("/session/{session_id}")
 def get_session(session_id: str):
     sim = SESSIONS.get(session_id)
@@ -293,6 +325,28 @@ def sessions():
         "active": list(SESSIONS.keys()),
         "count": len(SESSIONS)
     }
+
+
+# ==========================================================
+# SPA CATCH-ALL (React Router client-side routes)
+# ==========================================================
+# The React app uses client-side routing (`/session/<id>`, `/session/<id>/result`,
+# `/analytics`, ...). After a browser refresh those URLs are NOT handled by
+# React Router, so Starlette would return 404. This catch-all serves the
+# built `index.html` for any non-API GET request, letting React take over.
+# It is registered LAST so every real API route is matched first.
+@app.get("/{full_path:path}")
+async def spa_fallback(full_path: str):
+    # Serve the React SPA for any GET request that is NOT an explicit
+    # API / static route. This is what makes client-side routing work
+    # after a browser refresh (e.g. `/session/<id>`, `/analytics`,
+    # `/session/new`). Real API endpoints (defined above this
+    # catch-all) are matched first by Starlette, so they are never
+    # intercepted here.
+    if INDEX_PATH.exists():
+        return FileResponse(INDEX_PATH)
+
+    raise HTTPException(status_code=404, detail="Not found")
 
 
 # ==========================================================
